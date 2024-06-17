@@ -11,25 +11,47 @@ use ark_std::UniformRand;
 // Follows https://hackmd.io/3968Gr5hSSmef-nptg2GRw
 
 // `d` -- domain size (`N` in the hackmd), indexed by `k`
-// `m <= d` -- signer set size (`n` in the hackmd), indexed by `j`
-// dealers are indexed by `i`
+// `n <= d` -- signer set size (`n` in the hackmd), indexed by `j`
+// `t <= n` -- threshold, `deg(f) = t-1` for the secret-shared polynomial 'f'
+// that gives a `t` out of `n` threshold scheme
+// Dealers are indexed by `i`, their number is arbitrary.
 
+
+// Represents a dealing (aka transcript) of the dealer `i`
+// to the set of signers identified by an array `[pk_j], 0 <=`j < n` of their public keys in `G2`.
+//
+// For the degree `t-1` polynomial `f_i`:
+// - the secret being dealt is `f_i(0).G2`,
+// - the corresponding public key is `f_i(0).G1`,
+// - the share of the `j`-th signer is `f_i(w^j).G2`.
+//
+// The dealing contains:
+// - `Y_j = f_i(w^j).pk_j, j = 0,...,n-1`,
+//    the encryptions in `G2` of the shares to the corresponding signers.
+// - `C = f_i(0).G1`
+//    the verification key corresponding to the secret share.
+// - `A_k = f_i(w^k).G1, k = 0,...,d-1`
+//   "Feldman commitment" to `f_i` in the Lagrange form,
+//    used as a witness to validate the encryptions `Y_j` against the public keys `pk_j`,
+//    and the correctness of `C`.
+// - `(H1, H2)`
+//    a pair of points with the same dlog `H1=sh.G1, H2=sh.G2`.
+//    After summation will supply such a pair with an "unknown" (if there's an honest party) dlog,
+//    (similar to a KZG-ceremony of degree `1`).
+
+// The difference to SCRAPE as described in Fig. 1 of https://eprint.iacr.org/2021/005.pdf is:
+// - Commitments to the monomial coefficients of the polynomial other than `C = f_i(0).G1` are not used.
+// - `u2 = f_i(0).G2'`, where `G2'` is another generator in `G2`, isn't used.
+// - `(H1, H2)` is generated.
 
 // Since the aggregation is commutative, can represent either a freshly sampled or an aggregated share.
 struct Shares<C: Pairing> {
     // TODO: keep the agg counter?
-    // public key corresponding to this share of the secret `sk=f(0)` for the secret polynomial `f`
-    // `C = f(0).G1`
     c: C::G1Affine,
+    a: Vec<C::G1Affine>,
+    y: Vec<C::G2Affine>,
     h1: C::G1Affine,
     h2: C::G2Affine,
-    // Commitment to the coefficients of a secret polynomial `f` of degree `t-1` in the Lagrange form.
-    // `A_k = f(w^k).G1, k = 0,...,d-1`
-    a: Vec<C::G1Affine>,
-    // Lagrange coefficients of `f` encrypted to the corresponding signers.
-    // The decrypted share of each signer is `f(w^j).G2`.
-    // `Y_j = f(w^j).pk_j, j = 0,...,m`
-    y: Vec<C::G2Affine>,
 }
 
 struct GlobalSetup<C: Pairing, D: EvaluationDomain<C::ScalarField>> {
@@ -303,4 +325,8 @@ mod tests {
 
         let threshold_sig = setup.aggregate_sigs(&sigs);
     }
+
+    // TODO: test single signer, t = 1
+    // TODO: test t = n
+    // TODO: test multiple dealings
 }
