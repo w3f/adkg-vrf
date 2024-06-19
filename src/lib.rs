@@ -8,17 +8,25 @@ use ark_std::iter;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 
+// Threshold signature/VUF/VRF scheme.
 // Follows https://hackmd.io/3968Gr5hSSmef-nptg2GRw
+
+// There is a set of signers identified by an ordered array of their BLS public keys in G2.
+// Each signer knows his BLS secret key and his index in the array.
+
+// There is a set of dealers (that may or may not intersect with the set of signers)
+
+
 
 // `d` -- domain size (`N` in the hackmd), indexed by `k`
 // `n <= d` -- signer set size (`n` in the hackmd), indexed by `j`
-// `t <= n` -- threshold, `deg(f) = t-1` for the secret-shared polynomial 'f'
+// `t <= n` -- the threshold, `deg(f) = t-1` for the secret-shared polynomial 'f'
 // that gives a `t` out of `n` threshold scheme
 // Dealers are indexed by `i`, their number is arbitrary.
 
 
 // Represents a dealing (aka transcript) of the dealer `i`
-// to the set of signers identified by an array `[pk_j], 0 <=`j < n` of their public keys in `G2`.
+// to the set of signers identified by an array `[pk_j], 0 <= j < n` of their public keys in `G2`.
 //
 // For the degree `t-1` polynomial `f_i`:
 // - the secret being dealt is `f_i(0).G2`,
@@ -42,9 +50,10 @@ use ark_std::UniformRand;
 // The difference to SCRAPE as described in Fig. 1 of https://eprint.iacr.org/2021/005.pdf is:
 // - Commitments to the monomial coefficients of the polynomial other than `C = f_i(0).G1` are not used.
 // - `u2 = f_i(0).G2'`, where `G2'` is another generator in `G2`, isn't used.
-// - `(H1, H2)` is generated.
+// - `(H1, H2)` is sampled
 
 // Since the aggregation is commutative, can represent either a freshly sampled or an aggregated share.
+// TODO: how about duplicates?
 struct Shares<C: Pairing> {
     // TODO: keep the agg counter?
     c: C::G1Affine,
@@ -194,6 +203,14 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
         VirginBlsSigner { j, sk, bls_pk_g2 }
     }
 
+    // 1. `A_k, k = 0,...,d-1` is a commitment to a polynomial `f` such that `deg(f) < t`.
+    // 2. Verification key validity: `C = f(0).G1`.
+    // 3. Ciphertexts validity: `e(A_j,pk_j) = e(G1,Y_j), j = 0,...,n-1`.
+    // 4. (H1,H2) well-formedness: `e(H1,G2) = e(H2,G1)`.
+    // TODO: PoK of `sh` and `f(w^i)`
+    // TODO: Return result
+    // TODO: Batch verification
+    // TODO: move to `Shares`?
     fn verify_share<R: Rng>(&self, t: usize, shares: &Shares<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let z_k: Vec<_> = iter::once(C::ScalarField::zero())
