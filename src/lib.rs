@@ -17,7 +17,6 @@ use ark_std::UniformRand;
 // There is a set of dealers (that may or may not intersect with the set of signers)
 
 
-
 // `d` -- domain size (`N` in the hackmd), indexed by `k`
 // `n <= d` -- signer set size (`n` in the hackmd), indexed by `j`
 // `t <= n` -- the threshold, `deg(f) = t-1` for the secret-shared polynomial 'f'
@@ -127,6 +126,11 @@ struct ThresholdSig<C: Pairing> {
     threshold_pk: C::G2Affine, // aka bgpk
 }
 
+struct ThresholdVk<C: Pairing> {
+    c: C::G1Affine,
+    h1: C::G1Affine,
+    h2: C::G2Affine,
+}
 
 /// Deals shares to the set of signers identified by `bls_pks`
 struct Dealer<C: Pairing, D: EvaluationDomain<C::ScalarField>> {
@@ -249,9 +253,12 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
     }
 
     fn aggregate_sigs(&self, sigs_with_pks: &[ThresholdSig<C>]) -> ThresholdSig<C> {
-        let mut b = vec![false; self.domain.size()]; //TODO: m
+        let mut b = vec![false; self.domain.size()]; //TODO: n?
         sigs_with_pks.iter()
             .for_each(|sig| b[sig.j] = true);
+
+        println!("{:?}", b);
+
         let lis = self.lis(&b);
         let bls_sigs: Vec<_> = sigs_with_pks.iter().map(|s| s.bls_sig_with_pk.sig).collect();
         let bls_pks: Vec<_> = sigs_with_pks.iter().map(|s| s.bls_sig_with_pk.pk).collect();
@@ -276,12 +283,22 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
             .take(d)
             .collect();
         let denom_exp = non_signers.iter().sum::<usize>() % d;
-        let denom = (-w).pow([denom_exp as u64]) * self.domain.size_as_field_element();
+        let mut denom = powers_of_w[denom_exp] * self.domain.size_as_field_element();
+        if non_signers.len() % 2 == 1 {
+            denom = -denom;
+        }
         let denom_inv = denom.inverse().unwrap();
         signers.into_iter().map(|i| {
             let num = non_signers.iter().map(|&k| powers_of_w[i] - powers_of_w[k]).product::<C::ScalarField>();
             num * denom_inv
         }).collect()
+    }
+
+    fn verify(&self, sig: &ThresholdSig<C>, vk: &ThresholdVk<C>) {
+        assert_eq!(
+            C::pairing(self.g1.into(), sig.threshold_pk),
+            C::multi_pairing(&[vk.c, vk.h1], &[self.g2.into(), sig.bls_sig_with_pk.pk])
+        );
     }
 }
 
@@ -304,18 +321,18 @@ mod tests {
     fn it_works() {
         let rng = &mut test_rng();
         let d = 16;
-        let m = 10;
+        let n = 10;
         let t = 7;
         let setup = GlobalSetup::<ark_bls12_381::Bls12_381, GeneralEvaluationDomain<ark_bls12_381::Fr>>::init(d);
 
-        let signers: Vec<_> = (0..m)
+        let signers: Vec<_> = (0..n)
             .map(|j| setup.signer(j, rng))
             .collect();
         let signers_pks: Vec<_> = signers.iter()
             .map(|s| s.bls_pk_g2)
             .collect();
 
-        let dealers: Vec<_> = (0..m)
+        let dealers: Vec<_> = (0..n)
             .map(|_| setup.dealer(signers_pks.clone()))
             .collect();
 
@@ -329,6 +346,11 @@ mod tests {
 
         // TODO: aggregate 1/3 + 1
         let agg = setup.aggregate_shares(&shares);
+        let vk = ThresholdVk {
+            c: agg.c,
+            h1: agg.h1,
+            h2: agg.h2,
+        };
 
         let chads: Vec<_> = signers.into_iter()
             .map(|s| s.burgerize(&agg))
@@ -341,6 +363,35 @@ mod tests {
             .collect();
 
         let threshold_sig = setup.aggregate_sigs(&sigs);
+        setup.verify(&threshold_sig, &vk);
+    }
+
+    #[test]
+    fn test_lis() {
+        let rng = &mut test_rng();
+        let setup = GlobalSetup::<ark_bls12_381::Bls12_381, GeneralEvaluationDomain<ark_bls12_381::Fr>>::init(4);
+
+        let b = vec![true; 4];
+        let lis = setup.lis(&b);
+        assert_eq!(lis, setup.domain.evaluate_all_lagrange_coefficients(ark_bls12_381::Fr::zero()));
+
+        let b = vec![false, true, false, true];
+        let lis = setup.lis(&b);
+        let p_mon = DensePolynomial::rand(1, rng);
+        let p_lag = p_mon.evaluate_over_domain_by_ref(setup.domain).evals;
+        assert_eq!(p_mon.evaluate(&ark_bls12_381::Fr::zero()), lis[0] * p_lag[1] + lis[1] * p_lag[3]);
+
+        let b = vec![true, true, false, false];
+        let lis = setup.lis(&b);
+        let p_mon = DensePolynomial::rand(1, rng);
+        let p_lag = p_mon.evaluate_over_domain_by_ref(setup.domain).evals;
+        assert_eq!(p_mon.evaluate(&ark_bls12_381::Fr::zero()), lis[0] * p_lag[0] + lis[1] * p_lag[1]);
+
+        let b = vec![true, true, true, false];
+        let lis = setup.lis(&b);
+        let p_mon = DensePolynomial::rand(2, rng);
+        let p_lag = p_mon.evaluate_over_domain_by_ref(setup.domain).evals;
+        assert_eq!(p_mon.evaluate(&ark_bls12_381::Fr::zero()), lis.iter().zip(p_lag.iter()).map(|(li, pi)| li * pi).sum());
     }
 
     // TODO: test single signer, t = 1
