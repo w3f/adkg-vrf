@@ -1,3 +1,5 @@
+mod signing;
+
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
 use ark_ec::scalar_mul::fixed_base::FixedBase;
@@ -7,6 +9,7 @@ use ark_poly::univariate::DensePolynomial;
 use ark_std::iter;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
+use crate::signing::AggThresholdSig;
 
 // Threshold signature/VUF/VRF scheme.
 // Follows https://hackmd.io/3968Gr5hSSmef-nptg2GRw
@@ -124,12 +127,6 @@ struct ThresholdSig<C: Pairing> {
     j: usize, // index of th signer
     bls_sig_with_pk: StandaloneSig<C>,
     threshold_pk: C::G2Affine, // aka bgpk
-}
-
-struct ThresholdVk<C: Pairing> {
-    c: C::G1Affine,
-    h1: C::G1Affine,
-    h2: C::G2Affine,
 }
 
 /// Deals shares to the set of signers identified by `bls_pks`
@@ -252,7 +249,7 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
         }
     }
 
-    fn aggregate_sigs(&self, sigs_with_pks: &[ThresholdSig<C>]) -> ThresholdSig<C> {
+    fn aggregate_sigs(&self, sigs_with_pks: &[ThresholdSig<C>]) -> AggThresholdSig<C> {
         let mut b = vec![false; self.domain.size()]; //TODO: n?
         sigs_with_pks.iter()
             .for_each(|sig| b[sig.j] = true);
@@ -266,10 +263,9 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
         let asig = C::G1::msm(&bls_sigs, &lis).unwrap().into_affine();
         let apk = C::G2::msm(&bls_pks, &lis).unwrap().into_affine();
         let abgpk = C::G2::msm(&threshold_pks, &lis).unwrap().into_affine();
-        ThresholdSig {
-            j: 0,
+        AggThresholdSig {
             bls_sig_with_pk: StandaloneSig { sig: asig, pk: apk },
-            threshold_pk: abgpk,
+            bgpk: abgpk,
         }
     }
 
@@ -293,13 +289,6 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
             num * denom_inv
         }).collect()
     }
-
-    fn verify(&self, sig: &ThresholdSig<C>, vk: &ThresholdVk<C>) {
-        assert_eq!(
-            C::pairing(self.g1.into(), sig.threshold_pk),
-            C::multi_pairing(&[vk.c, vk.h1], &[self.g2.into(), sig.bls_sig_with_pk.pk])
-        );
-    }
 }
 
 // Multiply the same base by each scalar.
@@ -315,6 +304,7 @@ pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::test_rng;
+    use crate::signing::ThresholdVk;
     use super::*;
 
     #[test]
@@ -346,11 +336,7 @@ mod tests {
 
         // TODO: aggregate 1/3 + 1
         let agg = setup.aggregate_shares(&shares);
-        let vk = ThresholdVk {
-            c: agg.c,
-            h1: agg.h1,
-            h2: agg.h2,
-        };
+        let vk = ThresholdVk::from_share(&agg);
 
         let chads: Vec<_> = signers.into_iter()
             .map(|s| s.burgerize(&agg))
@@ -363,7 +349,7 @@ mod tests {
             .collect();
 
         let threshold_sig = setup.aggregate_sigs(&sigs);
-        setup.verify(&threshold_sig, &vk);
+        vk.verify(&threshold_sig);
     }
 
     #[test]
