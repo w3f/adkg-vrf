@@ -1,6 +1,6 @@
 use ark_ec::Group;
 use ark_ec::pairing::Pairing;
-use crate::{ChadThresholdSigner, Shares, StandaloneSig, ThresholdSig};
+use crate::{Shares, StandaloneSig};
 
 
 

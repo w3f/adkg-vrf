@@ -4,7 +4,7 @@ use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
 use ark_ec::scalar_mul::fixed_base::FixedBase;
 use ark_ff::{Field, One, PrimeField, Zero};
-use ark_poly::{DenseUVPolynomial, EvaluationDomain, Polynomial, Radix2EvaluationDomain};
+use ark_poly::{DenseUVPolynomial, EvaluationDomain};
 use ark_poly::univariate::DensePolynomial;
 use ark_std::iter;
 use ark_std::rand::Rng;
@@ -302,7 +302,7 @@ pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C
 
 #[cfg(test)]
 mod tests {
-    use ark_poly::GeneralEvaluationDomain;
+    use ark_poly::{GeneralEvaluationDomain, Polynomial};
     use ark_std::test_rng;
     use crate::signing::ThresholdVk;
     use super::*;
