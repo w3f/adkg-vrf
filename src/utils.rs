@@ -1,4 +1,4 @@
-use ark_ff::{FftField, Field, PrimeField};
+use ark_ff::{FftField, Field};
 use ark_poly::{DenseUVPolynomial, EvaluationDomain};
 use ark_poly::univariate::DensePolynomial;
 use ark_std::{end_timer, iter, start_timer};
@@ -11,10 +11,10 @@ fn v<F: Field>(x: F) -> DensePolynomial<F> {
     DensePolynomial::from_coefficients_vec(vec![-x, F::one()]) // -x*0 + 1*X
 }
 
-/// The vanishing polynomial of the set `x1,...,xn`.
-/// `v(X) = (X - x1) * ... * (X - xn)`
-// Runs in `O(nlog^2(n))` when the field `F` contains a radix-2 domain.
-// `n` doesn't have to be a power of `2`.
+/// The vanishing polynomial of the set `x_1,...,x_n`.
+/// `v(X) = (X - x_1) * ... * (X - x_n)`
+/// Runs in `O(nlog^2(n))` when the field `F` contains a radix-2 domain.
+/// `n` doesn't have to be a power of `2`.
 fn v_of<F: FftField>(xs: &[F]) -> DensePolynomial<F> {
     let n = xs.len();
     let mut product_tree = Vec::with_capacity(2 * n - 1);
@@ -25,7 +25,7 @@ fn v_of<F: FftField>(xs: &[F]) -> DensePolynomial<F> {
     product_tree[2 * n - 2].clone()
 }
 
-/// Computes `f'`, the formal derivative of 'f'.
+/// `f'`, the formal derivative of `f`.
 fn diff<F: Field>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
     let df_coeffs = f.iter()
         .enumerate()
@@ -35,69 +35,107 @@ fn diff<F: Field>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
     DensePolynomial::from_coefficients_vec(df_coeffs)
 }
 
-/// Inverted barycentric weights of the set `x_1, ..., x_n`.
-/// Returns `w_j = prod(x_j - x_k, k != j), j = 1,...,n`.
-// Runs in O(n^2)
-fn barycentric_weights_inv<F: Field>(xs: &[F]) -> Vec<F> {
-    xs.iter().map(|xj| xs.iter()
-        .filter_map(|xk| (xk != xj).then_some(*xj - xk))
-        .product(),
-    ).collect()
+/// A set of interpolation points together with the precomputed weights.
+/// The points don't have to form a multiplicative group.
+/// After the weights are computed, evaluating an interpolant at a point takes `O(n)`.
+pub struct BarycentricDomain<F: Field> {
+    /// Interpolation points `x_1,...,x_n`.
+    xs: Vec<F>,
+    /// Inverted barycentric weights of the points,
+    /// `1 / w_j = prod(x_j - x_k, k != j), j = 1,...,n`.
+    ws_inv: Vec<F>,
 }
 
-/// Inverted barycentric weights of the subset of the `domain` identified by the bitmask `b`.
-/// Runs in O(nlog^2(n)) by evaluating the derivative of the vanishing polynomial of the subset over the whole domain.
-fn barycentric_weights_inv_in_domain<F: FftField, D: EvaluationDomain<F>>(domain: D, b: &[bool]) -> Vec<F> {
-    assert_eq!(b.len(), domain.size());
-    let xs = domain.elements()
-        .zip(b)
-        .filter_map(|(xi, bi)| bi.then_some(xi))
-        .collect::<Vec<_>>();
-    let _t = start_timer!(|| "Product tree");
-    let v = v_of(&xs);
-    end_timer!(_t);
-    let dv = diff(&v);
-    let dv_over_domain = dv.evaluate_over_domain(domain);
-    dv_over_domain.evals.into_iter()
-        .zip(b)
-        .filter_map(|(xi, bi)| bi.then_some(xi))
-        .collect::<Vec<_>>()
+impl<F: FftField> BarycentricDomain<F> {
+
+    /// The set of interpolation points is a subset of the `fft_domain` identified by the `bitmask`.
+    /// The weights are computed as the evaluations of the derivative of the vanishing polynomial
+    /// of the interpolation points over the FFT domain in `O(nlog^2(n))`.
+    pub fn from_domain_subset<D: EvaluationDomain<F>>(fft_domain: D, bitmask: &[bool]) -> Self {
+        assert_eq!(bitmask.len(), fft_domain.size());
+        let xs = fft_domain.elements()
+            .zip(bitmask)
+            .filter_map(|(xi, bi)| bi.then_some(xi))
+            .collect::<Vec<_>>();
+        let _t = start_timer!(|| "Product tree");
+        let v = v_of(&xs);
+        end_timer!(_t);
+        let dv = diff(&v);
+        let dv_over_domain = dv.evaluate_over_domain(fft_domain);
+        let ws_inv = dv_over_domain.evals.into_iter()
+            .zip(bitmask)
+            .filter_map(|(xi, bi)| bi.then_some(xi))
+            .collect::<Vec<_>>();
+        Self {
+            xs,
+            ws_inv,
+        }
+    }
 }
 
-/// Evaluates the Lagrange basis polynomials over the set `x_1, ..., x_n` at `z`.
-/// Returns `L_j(z), j = 1,...,n`, where `deg(L_j) = n - 1`, `L_j(x_j) = 1` and `L_j(x_k) = 0` for `k != j`.
-// Follows the formulae from https://people.maths.ox.ac.uk/trefethen/barycentric.pdf, p.3.
-// Fails if `x_j = x_k` for `j != k`.
-pub fn lagrange_basis_at<F: PrimeField>(xs: &[F], z: &F) -> Vec<F> {
-    // 1 / w_j = prod(x_j - x_k, k != j)
-    let ws_inv = barycentric_weights_inv(xs);
+impl<F: Field> BarycentricDomain<F> {
 
-    // z - x_1, ..., z - x_n
-    let z_minus_xs: Vec<F> = iter::repeat(*z).zip(xs)
-        .map(|(z, xj)| z - xj)
-        .collect();
+    /// Computes the weights of the set `x_1, ..., x_n` in `O(n^2)` using the formula
+    /// `1 / w_j = prod(x_j - x_k, k != j), j = 1,...,n`.
+    pub fn from_set(xs: Vec<F>) -> Self {
+        let ws_inv = xs.iter().map(|xj| xs.iter()
+            .filter_map(|xk| (xk != xj).then_some(*xj - xk))
+            .product(),
+        ).collect();
+        Self {
+            xs,
+            ws_inv,
+        }
+    }
 
-    // l(z) = (z - x_1) ... (z - x_n)
-    let l_at_z: F = z_minus_xs.iter()
-        .product();
+    /// Evaluates the Lagrange basis polynomials over the set `x_1, ..., x_n` at `z`.
+    /// Returns `L_j(z), j = 1,...,n`, where `deg(L_j) = n - 1`, `L_j(x_j) = 1` and `L_j(x_k) = 0` for `k != j`.
+    // Follows the formulae from https://people.maths.ox.ac.uk/trefethen/barycentric.pdf, p.3.
+    // Fails if `x_j = x_k` for `j != k`.
+    pub fn lagrange_basis_at(&self, z: F) -> Vec<F> {
+        let (cs, l_at_z) = self._lagrange_basis_at(z);
+        // L_j(z) = c_j.l(z)
+        cs.iter()
+            .map(|cj| l_at_z * cj)
+            .collect()
+    }
 
-    // c_j = w_j / (z - x_j) = 1 / [(1 / w_j) * (z - x_j)]
-    let cs = {
-        let mut cs_inv: Vec<F> = ws_inv.into_iter().zip(z_minus_xs)
-            .map(|(wj_inv, z_minus_xj)| wj_inv * z_minus_xj)
+    pub fn evaluate(&self, ys: &[F], z: F) -> F {
+        let (cs, l_at_z) = self._lagrange_basis_at(z);
+        let p_at_z = l_at_z * cs.into_iter()
+            .zip(ys)
+            .map(|(cj, yj)| cj * yj)
+            .sum::<F>();
+        p_at_z
+    }
+
+    pub fn _lagrange_basis_at(&self, z: F) -> (Vec<F>, F) {
+        // z - x_1, ..., z - x_n
+        let z_minus_xs: Vec<F> = iter::repeat(z).zip(&self.xs)
+            .map(|(z, xj)| z - xj)
             .collect();
-        ark_ff::batch_inversion(&mut cs_inv);
-        cs_inv
-    };
 
-    // L_j(z) = c_j.l(z)
-    cs.iter()
-        .map(|cj| l_at_z * cj)
-        .collect()
+        // l(z) = (z - x_1) ... (z - x_n)
+        let l_at_z: F = z_minus_xs.iter()
+            .product();
+
+        // c_j = w_j / (z - x_j) = 1 / [(1 / w_j) * (z - x_j)]
+        let cs = {
+            let mut cs_inv: Vec<F> = self.ws_inv.iter().zip(z_minus_xs)
+                .map(|(wj_inv, z_minus_xj)| z_minus_xj * wj_inv)
+                .collect();
+            ark_ff::batch_inversion(&mut cs_inv);
+            cs_inv
+        };
+
+        (cs, l_at_z)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use ark_ec::CurveGroup;
+    use ark_ec::pairing::Pairing;
     use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
     use ark_poly::univariate::DensePolynomial;
     use ark_std::{end_timer, start_timer, test_rng};
@@ -108,16 +146,18 @@ mod tests {
 
     #[test]
     // x_j = u^j, where u is a primary root of unity of order n
-    fn over_roots_of_unity() {
+    fn over_subgroup() {
         let rng = &mut test_rng();
 
         let n = 16;
-        let domain = GeneralEvaluationDomain::new(n).unwrap();
-        let xs = domain.elements().collect::<Vec<_>>();
-        let z = ark_bls12_381::Fr::rand(rng);
-        let ls = lagrange_basis_at(&xs, &z);
+        let fft_domain = GeneralEvaluationDomain::new(n).unwrap();
+        let d = BarycentricDomain::from_domain_subset(fft_domain, &vec![true; n]);
 
-        assert_eq!(ls, domain.evaluate_all_lagrange_coefficients(z));
+        let z = ark_bls12_381::Fr::rand(rng);
+
+        let ls1 = d.lagrange_basis_at(z);
+        let ls2 = fft_domain.evaluate_all_lagrange_coefficients(z);
+        assert_eq!(ls1, ls2);
     }
 
     #[test]
@@ -129,13 +169,15 @@ mod tests {
         let xs = (0..n)
             .map(|_| ark_bls12_381::Fr::rand(rng))
             .collect::<Vec<_>>();
-        let z = ark_bls12_381::Fr::rand(rng);
-        let ls = lagrange_basis_at(&xs, &z);
+        let d = BarycentricDomain::from_set(xs.clone());
 
         let p = DensePolynomial::rand(n - 1, rng);
-        let p_at_z = xs.iter().zip(ls)
-            .map(|(xj, lj_at_z)| lj_at_z * p.evaluate(xj))
-            .sum::<ark_bls12_381::Fr>();
+        let ys = xs.iter()
+            .map(|xj|p.evaluate(xj))
+            .collect::<Vec<_>>();
+        let z = ark_bls12_381::Fr::rand(rng);
+
+        let p_at_z = d.evaluate(&ys, z);
 
         assert_eq!(p_at_z, p.evaluate(&z));
     }
@@ -154,6 +196,7 @@ mod tests {
     }
 
     #[test]
+    // the weights computed with different formulas are the same
     fn test_barycentric_weights() {
         let rng = &mut test_rng();
 
@@ -163,19 +206,15 @@ mod tests {
         let bitmask = _random_bits(n, t, rng);
 
         let _t = start_timer!(|| format!("Inverted barycentric weights, log(n)={}, t~{}", log_n, t));
-        let ws_inv1 = barycentric_weights_inv_in_domain(domain, &bitmask);
+        let d1 = BarycentricDomain::from_domain_subset(domain, &bitmask);
         end_timer!(_t);
 
-        let xs = domain.elements()
-            .zip(bitmask)
-            .filter_map(|(xi, bi)| bi.then_some(xi))
-            .collect::<Vec<_>>();
-
+        let xs = d1.xs;
         let _t = start_timer!(|| format!("Naive inverted barycentric weights, log(n)={}, t~{}", log_n, t));
-        let ws_inv2 = barycentric_weights_inv(&xs);
+        let d2 = BarycentricDomain::from_set(xs);
         end_timer!(_t);
 
-        assert_eq!(ws_inv1, ws_inv2);
+        assert_eq!(d1.ws_inv, d2.ws_inv);
     }
 
     fn _bench_barycentric_weights<F: FftField>(log_n: u32) {
@@ -183,15 +222,37 @@ mod tests {
         let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
         let bitmask = vec![true; n];
         let _t = start_timer!(|| format!("Inverted barycentric weights, log(n)={}", log_n));
-        let _ws_inv = barycentric_weights_inv_in_domain(domain, &bitmask);
+        let _d = BarycentricDomain::from_domain_subset(domain, &bitmask);
         end_timer!(_t);
     }
 
     #[test]
+    #[ignore]
     fn bench_barycentric_weights() {
         _bench_barycentric_weights::<ark_bls12_381::Fr>(10);
         _bench_barycentric_weights::<ark_bls12_381::Fr>(16);
         _bench_barycentric_weights::<ark_bls12_381::Fr>(20);
+    }
+
+    fn _bench_msm<G: CurveGroup>(log_n: u32) {
+        let rng = &mut test_rng();
+
+        let n = 2usize.pow(log_n);
+        let bases = (0..n).map(|_| G::rand(rng)).collect::<Vec<_>>();
+        let bases_affine = G::normalize_batch(&bases);
+        let exps = (0..n).map(|_| G::ScalarField::rand(rng)).collect::<Vec<_>>();
+
+        let _t = start_timer!(|| format!("MSM, log(n)={}", log_n));
+        let _msm = G::msm(&bases_affine, &exps);
+        end_timer!(_t);
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_against_msm() {
+        _bench_barycentric_weights::<ark_bls12_381::Fr>(10);
+        _bench_msm::<ark_bls12_381::G1Projective>(10);
+        _bench_msm::<ark_bls12_381::G2Projective>(10);
     }
 
     fn _random_bits<R: Rng>(n: usize, density: f64, rng: &mut R) -> Vec<bool> {
