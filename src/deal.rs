@@ -9,7 +9,7 @@ use ark_std::rand::Rng;
 use ark_std::UniformRand;
 
 use crate::single_base_msm;
-use crate::utils::lagrange_basis_at;
+use crate::utils::BarycentricDomain;
 
 /// Parameters of a DKG ceremony.
 /// The shares are dealt to the signers identified by their BLS public keys in G2.
@@ -56,17 +56,19 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 
     fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
-        let f_mon = DensePolynomial::rand(self.t - 1, rng);
+        // dealer's secrets
+        let (f_mon, sh) = (DensePolynomial::rand(self.t - 1, rng), C::ScalarField::rand(rng));
         let ssk = f_mon[0];
-        let sh = C::ScalarField::rand(rng);
-        let f_lag = f_mon.evaluate_over_domain(self.domain).evals;
+        let f_lag: Vec<C::ScalarField> = f_mon.evaluate_over_domain(self.domain).evals.into_iter()
+            .take(self.n)
+            .collect();
 
-        // TODO: no need in `d` elements
         let a = single_base_msm(&f_lag, self.g1);
-        assert_eq!(a.len(), self.domain.size());
+        assert_eq!(a.len(), self.n);
 
         // TODO: single_base_msm?
-        let bgpk: Vec<_> = self.bls_pks.iter().zip(f_lag)
+        let bgpk: Vec<_> = self.bls_pks.iter()
+            .zip(f_lag)
             .map(|(&pk_j, f_lag_j)| self.g2 * f_lag_j + pk_j * sh)
             .collect();
         let bgpk = C::G2::normalize_batch(&bgpk);
@@ -83,13 +85,11 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     fn verify<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         let (a, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
         let a2 = a.square();
-        let xs: Vec<C::ScalarField> = self.domain.elements()
-            .take(self.n)
-            .collect();
-        let ls_deg_n_at_z = lagrange_basis_at(&xs, &z);
+        let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let (ls_deg_t_at_z, ls_deg_t_at_0) = {
-            let mut ls_deg_t_at_z = lagrange_basis_at(&xs[..self.t], &z);
-            let mut ls_deg_t_at_0 = lagrange_basis_at(&xs[..self.t], &C::ScalarField::zero());
+            let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
+            let mut ls_deg_t_at_z = domain_size_t.lagrange_basis_at(z);
+            let mut ls_deg_t_at_0 = domain_size_t.lagrange_basis_at(C::ScalarField::zero());
             ls_deg_t_at_z.resize(self.n, C::ScalarField::zero());
             ls_deg_t_at_0.resize(self.n, C::ScalarField::zero());
             (ls_deg_t_at_z, ls_deg_t_at_0)
@@ -111,11 +111,8 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
     #[cfg(test)]
     fn verify_bgpks<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
-        let xs: Vec<C::ScalarField> = self.domain.elements()
-            .take(self.n)
-            .collect();
         let z = C::ScalarField::rand(rng);
-        let ls_at_z = lagrange_basis_at(&xs, &z);
+        let ls_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let f_at_z = C::G1::msm(&t.a[..self.n], &ls_at_z).unwrap();
         let bgpk_at_z = C::G2::msm(&t.bgpk, &ls_at_z).unwrap();
         let pk_at_z = C::G2::msm(&self.bls_pks, &ls_at_z).unwrap();
@@ -126,12 +123,9 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
     #[cfg(test)]
     fn verify_as<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
-        let xs: Vec<C::ScalarField> = self.domain.elements()
-            .take(self.n)
-            .collect();
         let z = C::ScalarField::rand(rng);
-        let ls_deg_n_at_z = lagrange_basis_at(&xs, &z);
-        let ls_deg_t_at_z = lagrange_basis_at(&xs[..self.t], &z);
+        let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
+        let ls_deg_t_at_z = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(z);
         let f_deg_n_at_z = C::G1::msm(&t.a[..self.n], &ls_deg_n_at_z);
         let f_deg_t_at_z = C::G1::msm(&t.a[..self.t], &ls_deg_t_at_z);
         assert_eq!(f_deg_n_at_z, f_deg_t_at_z);
@@ -139,10 +133,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
     #[cfg(test)]
     fn verify_c(&self, t: &Transcript<C>) {
-        let xs: Vec<C::ScalarField> = self.domain.elements()
-            .take(self.t)
-            .collect();
-        let ls_at_0 = lagrange_basis_at(&xs, &C::ScalarField::zero());
+        let ls_at_0 = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(C::ScalarField::zero());
         let f_at_0 = C::G1::msm(&t.a[..self.t], &ls_at_0).unwrap();
         assert_eq!(t.c, f_at_0.into_affine());
     }

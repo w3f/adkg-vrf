@@ -51,7 +51,7 @@ impl<F: FftField> BarycentricDomain<F> {
     /// The set of interpolation points is a subset of the `fft_domain` identified by the `bitmask`.
     /// The weights are computed as the evaluations of the derivative of the vanishing polynomial
     /// of the interpolation points over the FFT domain in `O(nlog^2(n))`.
-    pub fn from_domain_subset<D: EvaluationDomain<F>>(fft_domain: D, bitmask: &[bool]) -> Self {
+    pub fn from_subset<D: EvaluationDomain<F>>(fft_domain: D, bitmask: &[bool]) -> Self {
         assert_eq!(bitmask.len(), fft_domain.size());
         let xs = fft_domain.elements()
             .zip(bitmask)
@@ -70,6 +70,18 @@ impl<F: FftField> BarycentricDomain<F> {
             xs,
             ws_inv,
         }
+    }
+
+    /// The interpolation points are `x_k = w^k, k = 0,...,n-1`,
+    /// where `w` is the generator of the `fft_domain`.
+    pub fn of_size<D: EvaluationDomain<F>>(fft_domain: D, n: usize) -> Self {
+        assert!(n <= fft_domain.size());
+        let bitmask = {
+            let mut bitmask = vec![true; n];
+            bitmask.resize(fft_domain.size(), false);
+            bitmask
+        };
+        Self::from_subset(fft_domain, &bitmask)
     }
 }
 
@@ -151,7 +163,7 @@ mod tests {
 
         let n = 16;
         let fft_domain = GeneralEvaluationDomain::new(n).unwrap();
-        let d = BarycentricDomain::from_domain_subset(fft_domain, &vec![true; n]);
+        let d = BarycentricDomain::from_subset(fft_domain, &vec![true; n]);
 
         let z = ark_bls12_381::Fr::rand(rng);
 
@@ -206,7 +218,7 @@ mod tests {
         let bitmask = _random_bits(n, t, rng);
 
         let _t = start_timer!(|| format!("Inverted barycentric weights, log(n)={}, t~{}", log_n, t));
-        let d1 = BarycentricDomain::from_domain_subset(domain, &bitmask);
+        let d1 = BarycentricDomain::from_subset(domain, &bitmask);
         end_timer!(_t);
 
         let xs = d1.xs;
@@ -222,7 +234,7 @@ mod tests {
         let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
         let bitmask = vec![true; n];
         let _t = start_timer!(|| format!("Inverted barycentric weights, log(n)={}", log_n));
-        let _d = BarycentricDomain::from_domain_subset(domain, &bitmask);
+        let _d = BarycentricDomain::from_subset(domain, &bitmask);
         end_timer!(_t);
     }
 

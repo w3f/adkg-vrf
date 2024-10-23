@@ -1,4 +1,4 @@
-// mod deal;
+pub mod deal;
 mod signing;
 mod utils;
 
