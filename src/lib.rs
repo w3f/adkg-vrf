@@ -1,6 +1,7 @@
 pub mod deal;
 mod signing;
 mod utils;
+pub mod koe;
 
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ec::pairing::Pairing;

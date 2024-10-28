@@ -144,10 +144,13 @@ impl<F: Field> BarycentricDomain<F> {
     }
 }
 
+pub fn powers<F: Field>(base: F) -> impl Iterator<Item=F> {
+    iter::successors(Some(F::one()), move |prev| Some(base * prev))
+}
+
 #[cfg(test)]
 mod tests {
     use ark_ec::CurveGroup;
-    use ark_ec::pairing::Pairing;
     use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
     use ark_poly::univariate::DensePolynomial;
     use ark_std::{end_timer, start_timer, test_rng};

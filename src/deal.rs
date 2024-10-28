@@ -1,5 +1,5 @@
 use ark_ec::pairing::Pairing;
-use ark_ec::{CurveGroup, VariableBaseMSM};
+use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ec::Group;
 use ark_ff::{Field, One, Zero};
 use ark_poly::univariate::DensePolynomial;
@@ -8,7 +8,7 @@ use ark_poly::EvaluationDomain;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 
-use crate::single_base_msm;
+use crate::{koe, single_base_msm};
 use crate::utils::BarycentricDomain;
 
 /// Parameters of a DKG ceremony.
@@ -40,6 +40,11 @@ struct Transcript<C: Pairing> {
     c: C::G1Affine,
 }
 
+struct TranscriptWithWitness<C: Pairing> {
+    transcript: Transcript<C>,
+    koe_proof: koe::Proof<C::G1>,
+}
+
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     fn setup(t: usize, bls_pks: &'a [C::G2Affine]) -> Self {
         let n = bls_pks.len();
@@ -55,7 +60,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
+    fn deal<R: Rng>(&self, rng: &mut R) -> TranscriptWithWitness<C> {
         // dealer's secrets
         let (f_mon, sh) = (DensePolynomial::rand(self.t - 1, rng), C::ScalarField::rand(rng));
         let ssk = f_mon[0];
@@ -74,50 +79,103 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let bgpk = C::G2::normalize_batch(&bgpk);
         assert_eq!(bgpk.len(), self.bls_pks.len());
 
-        // Can be batched, but who cares.
-        let c = (self.g1 * ssk).into_affine();
-        let h1 = (self.g1 * sh).into_affine();
-        let h2 = (self.g2 * sh).into_affine();
+        let c = self.g1 * ssk;
+        let h1 = self.g1 * sh;
+        let h2 = self.g2 * sh;
 
-        Transcript { a, bgpk, h1, h2, c }
+        let instance = koe::Instance { base: self.g1, points: vec![c, h1] };
+        let statement = koe::Statement { instance, dlogs: vec![ssk, sh] };
+        let koe_proof = statement.prove(rng);
+
+        // Can be batched, but who cares.
+        let c = c.into_affine();
+        let h1 = h1.into_affine();
+        let h2 = h2.into_affine();
+        let transcript = Transcript { a, bgpk, h1, h2, c };
+        TranscriptWithWitness { transcript, koe_proof }
     }
 
-    fn verify<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
-        let (a, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
-        let a2 = a.square();
-        let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
-        let (ls_deg_t_at_z, ls_deg_t_at_0) = {
+    // Merges the equations from `Self::verify_unoptimized` with random coefficients `r1, r2, r3`.
+    fn verify<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
+        let t = &tww.transcript;
+
+        koe::Instance {
+            base: self.g1,
+            points: vec![t.c.into_group(), t.h1.into_group()]
+        }.verify(&tww.koe_proof);
+
+        // TODO: Fiat-Shamir
+        let (r1, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
+        let r2 = r1.square();
+        let r3 = r2 * r1;
+
+        let lis_size_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
+        let (lis_size_t_at_z, lis_size_t_at_0) = {
             let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
-            let mut ls_deg_t_at_z = domain_size_t.lagrange_basis_at(z);
-            let mut ls_deg_t_at_0 = domain_size_t.lagrange_basis_at(C::ScalarField::zero());
-            ls_deg_t_at_z.resize(self.n, C::ScalarField::zero());
-            ls_deg_t_at_0.resize(self.n, C::ScalarField::zero());
-            (ls_deg_t_at_z, ls_deg_t_at_0)
+            let mut lis_size_t_at_z = domain_size_t.lagrange_basis_at(z);
+            let mut lis_size_t_at_0 = domain_size_t.lagrange_basis_at(C::ScalarField::zero());
+            lis_size_t_at_z.resize(self.n, C::ScalarField::zero());
+            lis_size_t_at_0.resize(self.n, C::ScalarField::zero());
+            (lis_size_t_at_z, lis_size_t_at_0)
         };
 
-        let a_coeffs: Vec<_> = ls_deg_n_at_z.iter().zip(ls_deg_t_at_z).zip(ls_deg_t_at_0)
-            .map(|((n_z, t_z), t_0)| (C::ScalarField::one() - a) * n_z + a * t_z - a2 * t_0)
+        let a_coeffs: Vec<_> = lis_size_n_at_z.iter()
+            .zip(lis_size_t_at_z)
+            .zip(lis_size_t_at_0)
+            .map(|((li_n_z, li_t_z), li_t_0)| {
+                (C::ScalarField::one() - r1) * li_n_z + r1 * li_t_z - r2 * li_t_0
+            })
             .collect();
 
-        let a_term = C::G1::msm(&t.a[..self.n], &a_coeffs).unwrap();
-        let bgpk_at_z = C::G2::msm(&t.bgpk, &ls_deg_n_at_z).unwrap();
-        let pk_at_z = C::G2::msm(&self.bls_pks, &ls_deg_n_at_z).unwrap();
+        let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
+        let bgpk_at_z = C::G2::msm(&t.bgpk, &lis_size_n_at_z).unwrap();
+        let pk_at_z = C::G2::msm(&self.bls_pks, &lis_size_n_at_z).unwrap();
 
         assert!(C::multi_pairing(
-            &[t.c * a2 + a_term, -self.g1, t.h1.into()],
-            &[self.g2, bgpk_at_z, pk_at_z]
+            &[a_term + t.c * r2 + t.h1 * r3, -self.g1, t.h1.into()],
+            &[self.g2, bgpk_at_z + t.h2 * r3, pk_at_z]
         ).is_zero());
     }
 
     #[cfg(test)]
+    fn verify_unoptimized<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R)  {
+        let t = &tww.transcript;
+
+        // 1. Proof of knowledge of the discrete logarithms: C = sk.g1` and `h1 = sh.g1`.
+        koe::Instance {
+            base: self.g1,
+            points: vec![t.c.into_group(), t.h1.into_group()]
+        }.verify(&tww.koe_proof);
+
+        // 2. h2 has the same dlog as h1
+        assert_eq!(C::pairing(t.h1, self.g2), C::pairing(self.g1, t.h2));
+
+        // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
+        self.verify_as(&t, rng);
+
+        // 4. `C = f(0).g1`
+        self.verify_c(&t);
+
+        // 5. `bgpk`s are well-formed
+        self.verify_bgpks(&t, rng);
+    }
+
+    #[cfg(test)]
+    // Checks that `bgpk_j = f_i(w^j).g2 + sh_i.pk_j, j = 0,...,n-1`.
+    // For that we interpolate 3 degree `< n` polynomials in the exponent:
+    // 1. `bgpk(w^j).g2 = bgpk_j`,
+    // 2. `f(w^j).g1 = A_j`, and
+    // 3. `pk(w^j).g2 = pk_j`.
+    // Then `bgpk(z) = f(z) + sh.pk(z)`, and, as `h1 = sh_i.g1`,
+    // we can check that `e(g1, bgpk(z)) = e(f(z), g2) + e(h1, pk(z))`.
     fn verify_bgpks<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
-        let ls_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
-        let f_at_z = C::G1::msm(&t.a[..self.n], &ls_at_z).unwrap();
-        let bgpk_at_z = C::G2::msm(&t.bgpk, &ls_at_z).unwrap();
-        let pk_at_z = C::G2::msm(&self.bls_pks, &ls_at_z).unwrap();
-        let lhs = C::pairing(self.g1, bgpk_at_z);
-        let rhs = C::pairing(f_at_z, self.g2) + C::pairing(t.h1, pk_at_z);
+        let lis_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
+        let f_at_z_g1 = C::G1::msm(&t.a, &lis_at_z).unwrap();
+        let bgpk_at_z_g2 = C::G2::msm(&t.bgpk, &lis_at_z).unwrap();
+        let pk_at_z_g2 = C::G2::msm(&self.bls_pks, &lis_at_z).unwrap();
+        let lhs = C::pairing(self.g1, bgpk_at_z_g2);
+        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(t.h1, pk_at_z_g2);
         assert_eq!(lhs, rhs);
     }
 
@@ -126,7 +184,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let z = C::ScalarField::rand(rng);
         let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let ls_deg_t_at_z = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(z);
-        let f_deg_n_at_z = C::G1::msm(&t.a[..self.n], &ls_deg_n_at_z);
+        let f_deg_n_at_z = C::G1::msm(&t.a, &ls_deg_n_at_z);
         let f_deg_t_at_z = C::G1::msm(&t.a[..self.t], &ls_deg_t_at_z);
         assert_eq!(f_deg_n_at_z, f_deg_t_at_z);
     }
@@ -158,10 +216,9 @@ mod tests {
             Ceremony::<ark_bls12_381::Bls12_381, GeneralEvaluationDomain<ark_bls12_381::Fr>>::setup(
                 t, &signers,
             );
-        let t = params.deal(rng);
-        params.verify(&t, rng);
-        params.verify_bgpks(&t, rng);
-        params.verify_as(&t, rng);
-        params.verify_c(&t);
+        let tww = params.deal(rng);
+
+        params.verify_unoptimized(&tww, rng);
+        params.verify(&tww, rng);
     }
 }
