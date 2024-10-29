@@ -26,14 +26,15 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// Represents...
 /// `f_i` -- the dealer's secret polynomial,
 /// `sh_i` -- a secret known to the dealer, such that `h1 = sh_i.g1` and `h2 = sh_i.g2`
-struct Transcript<C: Pairing> {
+/// `(bgpk_j, h2)` is precisely the El-Gamal encryption of the point `f_i(w^j).g2` with `pk_j`.
+struct KeysDistributed<C: Pairing> {
+    /// Signers' "threshold public keys". Actually these are El-Gamal
     /// `bgpk_j = f_i(w^j).g2 + sh_i.pk_j, j = 0,...,n-1`,
     bgpk: Vec<C::G2Affine>,
     /// `h1 = sh_i.g1`
     h1: C::G1Affine,
     /// `h2 = sh_i.g2`
     h2: C::G2Affine,
-    // TODO: witness
     /// `f_i(0).g1` // can be computed from `A_k` as `C = 1/d.sum(A_k)`,
     c: C::G1Affine,
 }
@@ -41,7 +42,7 @@ struct Transcript<C: Pairing> {
 /// Standalone or aggregated transcript with the witness.
 // TODO: add ids (and weights)
 struct TranscriptWithWitness<C: Pairing> {
-    transcript: Transcript<C>,
+    keys: KeysDistributed<C>,
     // transcript's consistency evidence
     /// Commitment to the secret polynomial `A_j = f_i(w^j).g1, j = 0,...,n-1`
     a: Vec<C::G1Affine>,
@@ -104,10 +105,10 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let c = c.into_affine();
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
-        let transcript = Transcript { bgpk, h1, h2, c };
+        let keys = KeysDistributed { bgpk, h1, h2, c };
         let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
         TranscriptWithWitness {
-            transcript,
+            keys,
             a,
             koe_proofs: vec![koe_proof]
         }
@@ -133,7 +134,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             .sum::<C::G1>()
             .into_affine();
 
-        let t = &tww.transcript;
+        let t = &tww.keys;
         assert_eq!(t.c, sum_c);
         assert_eq!(t.h1, sum_h1);
 
@@ -174,7 +175,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     #[cfg(test)]
     fn verify_transcript_unoptimized<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R)  {
         // 2. h2 has the same dlog as h1
-        assert_eq!(C::pairing(tww.transcript.h1, self.g2), C::pairing(self.g1, tww.transcript.h2));
+        assert_eq!(C::pairing(tww.keys.h1, self.g2), C::pairing(self.g1, tww.keys.h2));
         // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
         self.verify_as(&tww, rng);
         // 4. `C = f(0).g1`
@@ -195,10 +196,10 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let z = C::ScalarField::rand(rng);
         let lis_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let f_at_z_g1 = C::G1::msm(&tww.a, &lis_at_z).unwrap();
-        let bgpk_at_z_g2 = C::G2::msm(&tww.transcript.bgpk, &lis_at_z).unwrap();
+        let bgpk_at_z_g2 = C::G2::msm(&tww.keys.bgpk, &lis_at_z).unwrap();
         let pk_at_z_g2 = C::G2::msm(&self.bls_pks, &lis_at_z).unwrap();
         let lhs = C::pairing(self.g1, bgpk_at_z_g2);
-        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(tww.transcript.h1, pk_at_z_g2);
+        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(tww.keys.h1, pk_at_z_g2);
         assert_eq!(lhs, rhs);
     }
 
@@ -216,7 +217,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     fn verify_c(&self, tww: &TranscriptWithWitness<C>) {
         let ls_at_0 = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(C::ScalarField::zero());
         let f_at_0 = C::G1::msm(&tww.a[..self.t], &ls_at_0).unwrap();
-        assert_eq!(tww.transcript.c, f_at_0.into_affine());
+        assert_eq!(tww.keys.c, f_at_0.into_affine());
     }
 }
 
