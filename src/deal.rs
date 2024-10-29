@@ -44,14 +44,15 @@ struct Transcript<C: Pairing> {
 // TODO: add ids (and weights)
 struct TranscriptWithWitness<C: Pairing> {
     transcript: Transcript<C>,
-    witness: Vec<Witness<C>>,
+    witness: Vec<KoeProof<C>>,
 }
 
-struct Witness<C: Pairing> {
+/// Proof that the dealer `i` knows the secrets dealt.
+struct KoeProof<C: Pairing> {
     /// `C_i = f_i(0).g1`
-    c: C::G1Affine,
+    c_i: C::G1Affine,
     /// `h1_i = sh_i.g1`
-    h1: C::G1Affine,
+    h1_i: C::G1Affine,
     /// `s_i` is a proof of knowledge of the discrete logs of `(C_i, h1_i)` with respect to `g1`.
     koe_proof: koe::Proof<C::G1>,
 }
@@ -103,7 +104,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
         let transcript = Transcript { a, bgpk, h1, h2, c };
-        let witness = Witness { c, h1, koe_proof };
+        let witness = KoeProof { c_i: c, h1_i: h1, koe_proof };
         TranscriptWithWitness {
             transcript,
             witness: vec![witness]
@@ -116,17 +117,17 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             .for_each(|w| {
                 koe::Instance {
                     base: self.g1,
-                    points: vec![w.c.into_group(), w.h1.into_group()]
+                    points: vec![w.c_i.into_group(), w.h1_i.into_group()]
                 }.verify(&w.koe_proof);
             });
 
         let sum_c = tww.witness.iter()
-            .map(|w|w.c)
+            .map(|w|w.c_i)
             .sum::<C::G1>()
             .into_affine();
 
         let sum_h1 = tww.witness.iter()
-            .map(|w|w.h1)
+            .map(|w|w.h1_i)
             .sum::<C::G1>()
             .into_affine();
 
