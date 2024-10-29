@@ -44,12 +44,16 @@ struct Transcript<C: Pairing> {
 // TODO: add ids (and weights)
 struct TranscriptWithWitness<C: Pairing> {
     transcript: Transcript<C>,
-    /// `C_i = f_i(0).g1, i = 1,...,m`
-    cs: Vec<C::G1Affine>,
-    /// `h1_i = sh_i.g1, i = 1,...,m`
-    h1s: Vec<C::G1Affine>,
+    witness: Vec<Witness<C>>,
+}
+
+struct Witness<C: Pairing> {
+    /// `C_i = f_i(0).g1`
+    c: C::G1Affine,
+    /// `h1_i = sh_i.g1`
+    h1: C::G1Affine,
     /// `s_i` is a proof of knowledge of the discrete logs of `(C_i, h1_i)` with respect to `g1`.
-    koe_proofs: Vec<koe::Proof<C::G1>>,
+    koe_proof: koe::Proof<C::G1>,
 }
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
@@ -99,29 +103,36 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
         let transcript = Transcript { a, bgpk, h1, h2, c };
+        let witness = Witness { c, h1, koe_proof };
         TranscriptWithWitness {
             transcript,
-            cs: vec![c],
-            h1s: vec![h1],
-            koe_proofs: vec![koe_proof],
+            witness: vec![witness]
         }
     }
 
     fn verify<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
-        tww.cs.iter()
-            .zip(tww.h1s.iter())
-            .zip(tww.koe_proofs.iter())
-            .for_each(|((ci, h1i), si)| {
+        tww.witness.iter()
+            .for_each(|w| {
                 koe::Instance {
                     base: self.g1,
-                    points: vec![ci.into_group(), h1i.into_group()]
-                }.verify(si);
+                    points: vec![w.c.into_group(), w.h1.into_group()]
+                }.verify(&w.koe_proof);
             });
 
+        let sum_c = tww.witness.iter()
+            .map(|w|w.c)
+            .sum::<C::G1>()
+            .into_affine();
+
+        let sum_h1 = tww.witness.iter()
+            .map(|w|w.h1)
+            .sum::<C::G1>()
+            .into_affine();
+
         let t = &tww.transcript;
-        assert_eq!(tww.cs[0], t.c);
-        assert_eq!(tww.h1s[0], t.h1);
+        assert_eq!(t.c, sum_c);
+        assert_eq!(t.h1, sum_h1);
 
         // Merges the equations from `Self::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
         // TODO: Fiat-Shamir
