@@ -285,8 +285,9 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
 #[cfg(test)]
 mod tests {
+    use ark_ff::FftField;
     use ark_poly::GeneralEvaluationDomain;
-    use ark_std::test_rng;
+    use ark_std::{end_timer, start_timer, test_rng};
 
     use super::*;
 
@@ -310,5 +311,29 @@ mod tests {
 
         let agg_tww = tww1.merge_with(&vec![tww2]);
         params.verify(&agg_tww, rng);
+    }
+
+    fn _bench_dkg<C: Pairing>(t: usize, n: usize) {
+        let rng = &mut test_rng();
+        let signers = (0..n)
+            .map(|_| C::G2Affine::rand(rng))
+            .collect::<Vec<_>>();
+        let params =
+            Ceremony::<C, GeneralEvaluationDomain<C::ScalarField>>::setup(
+                t, &signers,
+            );
+        let _t = start_timer!(|| format!("Transcript generation, n = {}", n));
+        let transcript = params.deal(rng);
+        end_timer!(_t);
+
+        let _t = start_timer!(|| format!("Standalone transcript validation, n = {}", n));
+        params.verify(&transcript, rng);
+        end_timer!(_t);
+    }
+
+    #[test]
+    // #[ignore]
+    fn bench_dkg_jam() {
+        _bench_dkg::<ark_bls12_381::Bls12_381>(682,1023);
     }
 }
