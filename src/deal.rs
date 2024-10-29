@@ -7,6 +7,7 @@ use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
+use derivative::Derivative;
 
 use crate::{koe, single_base_msm};
 use crate::utils::BarycentricDomain;
@@ -27,6 +28,8 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// `f_i` -- the dealer's secret polynomial,
 /// `sh_i` -- a secret known to the dealer, such that `h1 = sh_i.g1` and `h2 = sh_i.g2`
 /// `(bgpk_j, h2)` is precisely the El-Gamal encryption of the point `f_i(w^j).g2` with `pk_j`.
+#[derive(Derivative)]
+#[derivative(Clone)]
 struct KeysDistributed<C: Pairing> {
     /// Signers' "threshold public keys". Actually these are El-Gamal
     /// `bgpk_j = f_i(w^j).g2 + sh_i.pk_j, j = 0,...,n-1`,
