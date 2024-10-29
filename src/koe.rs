@@ -1,6 +1,7 @@
 use ark_ec::CurveGroup;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
+use derivative::Derivative;
 use crate::utils::powers;
 
 /// Batch-verifiable proofs of knowledge of discrete logarithms
@@ -15,6 +16,8 @@ pub struct Statement<G: CurveGroup> {
     pub dlogs: Vec<G::ScalarField>,
 }
 
+#[derive(Derivative)]
+#[derivative(Clone)]
 pub struct Proof<G: CurveGroup> {
     r: G,
     s: G::ScalarField,

@@ -43,7 +43,9 @@ struct KeysDistributed<C: Pairing> {
 }
 
 /// Standalone or aggregated transcript with the witness.
-// TODO: add ids (and weights)
+// TODO: add ids (and weights
+#[derive(Derivative)]
+#[derivative(Clone)]
 struct TranscriptWithWitness<C: Pairing> {
     keys: KeysDistributed<C>,
     // transcript's consistency evidence
@@ -53,6 +55,8 @@ struct TranscriptWithWitness<C: Pairing> {
 }
 
 /// Proof that the dealer `i` knows the secrets dealt.
+#[derive(Derivative)]
+#[derivative(Clone)]
 struct KoeProof<C: Pairing> {
     /// `C_i = f_i(0).g1`
     c_i: C::G1Affine,
@@ -60,6 +64,61 @@ struct KoeProof<C: Pairing> {
     h1_i: C::G1Affine,
     /// `s_i` is a proof of knowledge of the discrete logs of `(C_i, h1_i)` with respect to `g1`.
     koe_proof: koe::Proof<C::G1>,
+}
+
+impl<C: Pairing> KeysDistributed<C> {
+    fn merge_with(self, mut others: Vec<Self>) -> Self {
+        others.push(self);
+        Self::merge(&others)
+    }
+
+    fn merge(keys: &[Self]) -> Self {
+        let n = keys[0].bgpk.len();
+        Self {
+            c: (keys.iter().map(|key| key.c).sum::<C::G1>()).into_affine(),
+            // TODO: affine conversions
+            bgpk: (0..n).map(|j| {
+                keys.iter()
+                    .map(|key| key.bgpk[j])
+                    .sum::<C::G2>()
+                    .into_affine()
+            }).collect(),
+            h1: keys.iter().map(|key| key.h1).sum::<C::G1>().into_affine(),
+            h2: keys.iter().map(|key| key.h2).sum::<C::G2>().into_affine(),
+        }
+    }
+}
+
+impl<C: Pairing> TranscriptWithWitness<C> {
+    fn merge_with(self, others: &[Self])  -> Self {
+        let mut others = others.to_vec();
+        others.push(self);
+        Self::merge(&others)
+    }
+
+    fn merge(transcripts: &[Self]) -> Self {
+        let n = transcripts[0].a.len();
+        let a = (0..n).map(|j| {
+            transcripts.iter()
+                .map(|t| t.a[j])
+                .sum::<C::G1>().into_affine()
+        }).collect();
+
+        let keys = transcripts.iter()
+            .map(|t| t.keys.clone())
+            .collect::<Vec<_>>();
+        let keys = KeysDistributed::merge(&keys);
+
+        let koe_proofs = transcripts.iter()
+            .flat_map(|t|t.koe_proofs.clone())
+            .collect::<Vec<_>>();
+
+        Self {
+            keys,
+            a,
+            koe_proofs,
+        }
+    }
 }
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
@@ -243,9 +302,13 @@ mod tests {
             Ceremony::<ark_bls12_381::Bls12_381, GeneralEvaluationDomain<ark_bls12_381::Fr>>::setup(
                 t, &signers,
             );
-        let tww = params.deal(rng);
+        let tww1 = params.deal(rng);
+        let tww2 = params.deal(rng);
 
-        params.verify_transcript_unoptimized(&tww, rng);
-        params.verify(&tww, rng);
+        params.verify_transcript_unoptimized(&tww1, rng);
+        params.verify(&tww1, rng);
+
+        let agg_tww = tww1.merge_with(&vec![tww2]);
+        params.verify(&agg_tww, rng);
     }
 }
