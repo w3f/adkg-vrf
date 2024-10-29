@@ -27,8 +27,6 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// `f_i` -- the dealer's secret polynomial,
 /// `sh_i` -- a secret known to the dealer, such that `h1 = sh_i.g1` and `h2 = sh_i.g2`
 struct Transcript<C: Pairing> {
-    /// `A_k = f_i(w^k).g1, k = 0,...,d-1`
-    a: Vec<C::G1Affine>,
     /// `bgpk_j = f_i(w^j).g2 + sh_i.pk_j, j = 0,...,n-1`,
     bgpk: Vec<C::G2Affine>,
     /// `h1 = sh_i.g1`
@@ -44,7 +42,10 @@ struct Transcript<C: Pairing> {
 // TODO: add ids (and weights)
 struct TranscriptWithWitness<C: Pairing> {
     transcript: Transcript<C>,
-    witness: Vec<KoeProof<C>>,
+    // transcript's consistency evidence
+    /// Commitment to the secret polynomial `A_j = f_i(w^j).g1, j = 0,...,n-1`
+    a: Vec<C::G1Affine>,
+    koe_proofs: Vec<KoeProof<C>>,
 }
 
 /// Proof that the dealer `i` knows the secrets dealt.
@@ -103,17 +104,18 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let c = c.into_affine();
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
-        let transcript = Transcript { a, bgpk, h1, h2, c };
-        let witness = KoeProof { c_i: c, h1_i: h1, koe_proof };
+        let transcript = Transcript { bgpk, h1, h2, c };
+        let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
         TranscriptWithWitness {
             transcript,
-            witness: vec![witness]
+            a,
+            koe_proofs: vec![koe_proof]
         }
     }
 
     fn verify<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
-        tww.witness.iter()
+        tww.koe_proofs.iter()
             .for_each(|w| {
                 koe::Instance {
                     base: self.g1,
@@ -121,12 +123,12 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
                 }.verify(&w.koe_proof);
             });
 
-        let sum_c = tww.witness.iter()
+        let sum_c = tww.koe_proofs.iter()
             .map(|w|w.c_i)
             .sum::<C::G1>()
             .into_affine();
 
-        let sum_h1 = tww.witness.iter()
+        let sum_h1 = tww.koe_proofs.iter()
             .map(|w|w.h1_i)
             .sum::<C::G1>()
             .into_affine();
@@ -159,7 +161,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             })
             .collect();
 
-        let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
+        let a_term = C::G1::msm(&tww.a, &a_coeffs).unwrap();
         let bgpk_at_z = C::G2::msm(&t.bgpk, &lis_size_n_at_z).unwrap();
         let pk_at_z = C::G2::msm(&self.bls_pks, &lis_size_n_at_z).unwrap();
 
@@ -170,15 +172,15 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 
     #[cfg(test)]
-    fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R)  {
+    fn verify_transcript_unoptimized<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R)  {
         // 2. h2 has the same dlog as h1
-        assert_eq!(C::pairing(t.h1, self.g2), C::pairing(self.g1, t.h2));
+        assert_eq!(C::pairing(tww.transcript.h1, self.g2), C::pairing(self.g1, tww.transcript.h2));
         // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
-        self.verify_as(&t, rng);
+        self.verify_as(&tww, rng);
         // 4. `C = f(0).g1`
-        self.verify_c(&t);
+        self.verify_c(&tww);
         // 5. `bgpk`s are well-formed
-        self.verify_bgpks(&t, rng);
+        self.verify_bgpks(&tww, rng);
     }
 
     #[cfg(test)]
@@ -189,32 +191,32 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     // 3. `pk(w^j).g2 = pk_j`.
     // Then `bgpk(z) = f(z) + sh.pk(z)`, and, as `h1 = sh_i.g1`,
     // we can check that `e(g1, bgpk(z)) = e(f(z), g2) + e(h1, pk(z))`.
-    fn verify_bgpks<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+    fn verify_bgpks<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let lis_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
-        let f_at_z_g1 = C::G1::msm(&t.a, &lis_at_z).unwrap();
-        let bgpk_at_z_g2 = C::G2::msm(&t.bgpk, &lis_at_z).unwrap();
+        let f_at_z_g1 = C::G1::msm(&tww.a, &lis_at_z).unwrap();
+        let bgpk_at_z_g2 = C::G2::msm(&tww.transcript.bgpk, &lis_at_z).unwrap();
         let pk_at_z_g2 = C::G2::msm(&self.bls_pks, &lis_at_z).unwrap();
         let lhs = C::pairing(self.g1, bgpk_at_z_g2);
-        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(t.h1, pk_at_z_g2);
+        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(tww.transcript.h1, pk_at_z_g2);
         assert_eq!(lhs, rhs);
     }
 
     #[cfg(test)]
-    fn verify_as<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+    fn verify_as<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let ls_deg_t_at_z = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(z);
-        let f_deg_n_at_z = C::G1::msm(&t.a, &ls_deg_n_at_z);
-        let f_deg_t_at_z = C::G1::msm(&t.a[..self.t], &ls_deg_t_at_z);
+        let f_deg_n_at_z = C::G1::msm(&tww.a, &ls_deg_n_at_z);
+        let f_deg_t_at_z = C::G1::msm(&tww.a[..self.t], &ls_deg_t_at_z);
         assert_eq!(f_deg_n_at_z, f_deg_t_at_z);
     }
 
     #[cfg(test)]
-    fn verify_c(&self, t: &Transcript<C>) {
+    fn verify_c(&self, tww: &TranscriptWithWitness<C>) {
         let ls_at_0 = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(C::ScalarField::zero());
-        let f_at_0 = C::G1::msm(&t.a[..self.t], &ls_at_0).unwrap();
-        assert_eq!(t.c, f_at_0.into_affine());
+        let f_at_0 = C::G1::msm(&tww.a[..self.t], &ls_at_0).unwrap();
+        assert_eq!(tww.transcript.c, f_at_0.into_affine());
     }
 }
 
@@ -239,7 +241,7 @@ mod tests {
             );
         let tww = params.deal(rng);
 
-        params.verify_transcript_unoptimized(&tww.transcript, rng);
+        params.verify_transcript_unoptimized(&tww, rng);
         params.verify(&tww, rng);
     }
 }
