@@ -126,7 +126,7 @@ impl<C: Pairing> SharesAndMore<C> {
 }
 
 impl<C: Pairing> Transcript<C> {
-    fn merge_with(self, others: &[Self])  -> Self {
+    fn merge_with(self, others: &[Self]) -> Self {
         let mut others = others.to_vec();
         others.push(self);
         Self::merge(&others)
@@ -146,7 +146,7 @@ impl<C: Pairing> Transcript<C> {
         let shares = SharesAndMore::merge(&shares);
 
         let koe_proofs = transcripts.iter()
-            .flat_map(|t|t.koe_proofs.clone())
+            .flat_map(|t| t.koe_proofs.clone())
             .collect::<Vec<_>>();
 
         Self {
@@ -214,27 +214,30 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         Transcript {
             shares,
             a: f_lag_g1,
-            koe_proofs: vec![koe_proof]
+            koe_proofs: vec![koe_proof],
         }
     }
 
     fn verify<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
-        t.koe_proofs.iter()
-            .for_each(|w| {
-                koe::Instance {
+        let koes = t.koe_proofs.iter()
+            .map(|w| {
+                let x = koe::Instance {
                     base: self.g1,
-                    points: vec![w.c_i.into_group(), w.h1_i.into_group()]
-                }.verify(&w.koe_proof);
-            });
+                    points: vec![w.c_i.into_group(), w.h1_i.into_group()],
+                };
+                (x, w.koe_proof.clone())
+            })
+            .collect::<Vec<_>>();
+        koe::Instance::batch_verify(&koes, rng);
 
         let sum_c = t.koe_proofs.iter()
-            .map(|w|w.c_i)
+            .map(|w| w.c_i)
             .sum::<C::G1>()
             .into_affine();
 
         let sum_h1 = t.koe_proofs.iter()
-            .map(|w|w.h1_i)
+            .map(|w| w.h1_i)
             .sum::<C::G1>()
             .into_affine();
 
@@ -276,12 +279,12 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
         assert!(C::multi_pairing(
             &[a_term + shares.c * r2 + shares.h1 * r3, -self.g1, shares.h1.into()],
-            &[self.g2, bgpk_at_z + shares.h2 * r3, pk_at_z]
+            &[self.g2, bgpk_at_z + shares.h2 * r3, pk_at_z],
         ).is_zero());
     }
 
     #[cfg(test)]
-    fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R)  {
+    fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         // 2. h2 has the same dlog as h1
         assert_eq!(C::pairing(t.shares.h1, self.g2), C::pairing(self.g1, t.shares.h2));
         // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
@@ -389,6 +392,6 @@ mod tests {
     #[test]
     // #[ignore]
     fn bench_dkg_jam() {
-        _bench_dkg::<ark_bls12_381::Bls12_381>(682,1023);
+        _bench_dkg::<ark_bls12_381::Bls12_381>(682, 1023);
     }
 }
