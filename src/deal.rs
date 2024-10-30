@@ -7,6 +7,7 @@ use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer, UniformRand};
+use ark_std::iterable::Iterable;
 use derivative::Derivative;
 
 use crate::{koe, single_base_msm};
@@ -144,20 +145,22 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             .take(self.n)
             .collect();
 
-        let _t = start_timer!(|| format!("As, n = {}", self.n));
-        let a = single_base_msm(&f_lag, self.g1);
-        assert_eq!(a.len(), self.n);
+        let _t = start_timer!(|| "Commitment to the secret polynomial in G1 and G2");
+        let f_lag_g1 = single_base_msm(&f_lag, self.g1);
+        let f_lag_g2 = single_base_msm(&f_lag, self.g2);
         end_timer!(_t);
 
-        let _t = start_timer!(|| format!("bgpks, n = {}", self.n));
-        // TODO: single_base_msm?
-        let bgpk: Vec<_> = self.bls_pks.iter()
-            .zip(f_lag)
-            .map(|(&pk_j, f_lag_j)| self.g2 * f_lag_j + pk_j * sh)
+        let _t = start_timer!(|| "Key exchange");
+        let shared_keys: Vec<_> = self.bls_pks.iter()
+            .map(|&pk_j| pk_j * sh)
+            .collect();
+        end_timer!(_t);
+
+        let bgpk: Vec<_> = f_lag_g2.into_iter()
+            .zip(shared_keys)
+            .map(|(f_j, sk_j)| f_j + sk_j)
             .collect();
         let bgpk = C::G2::normalize_batch(&bgpk);
-        assert_eq!(bgpk.len(), self.bls_pks.len());
-        end_timer!(_t);
 
         let c = self.g1 * ssk;
         let h1 = self.g1 * sh;
@@ -175,7 +178,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
         TranscriptWithWitness {
             keys,
-            a,
+            a: f_lag_g1,
             koe_proofs: vec![koe_proof]
         }
     }
@@ -210,7 +213,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let r2 = r1.square();
         let r3 = r2 * r1;
 
-        let _t = start_timer!(|| format!("Interpolation, t = {}, n = {}", self.t, self.n));
+        let _t = start_timer!(|| "Interpolation");
         let lis_size_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let (lis_size_t_at_z, lis_size_t_at_0) = {
             let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
@@ -230,7 +233,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             })
             .collect();
 
-        let _t = start_timer!(|| format!("1xG1 + 2xG2 MSMs, n = {}", self.n));
+        let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
         let a_term = C::G1::msm(&tww.a, &a_coeffs).unwrap();
         let bgpk_at_z = C::G2::msm(&t.bgpk, &lis_size_n_at_z).unwrap();
         let pk_at_z = C::G2::msm(&self.bls_pks, &lis_size_n_at_z).unwrap();
