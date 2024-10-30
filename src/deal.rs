@@ -6,7 +6,7 @@ use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_std::rand::Rng;
-use ark_std::UniformRand;
+use ark_std::{end_timer, start_timer, UniformRand};
 use derivative::Derivative;
 
 use crate::{koe, single_base_msm};
@@ -144,9 +144,12 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             .take(self.n)
             .collect();
 
+        let _t = start_timer!(|| format!("As, n = {}", self.n));
         let a = single_base_msm(&f_lag, self.g1);
         assert_eq!(a.len(), self.n);
+        end_timer!(_t);
 
+        let _t = start_timer!(|| format!("bgpks, n = {}", self.n));
         // TODO: single_base_msm?
         let bgpk: Vec<_> = self.bls_pks.iter()
             .zip(f_lag)
@@ -154,6 +157,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             .collect();
         let bgpk = C::G2::normalize_batch(&bgpk);
         assert_eq!(bgpk.len(), self.bls_pks.len());
+        end_timer!(_t);
 
         let c = self.g1 * ssk;
         let h1 = self.g1 * sh;
@@ -206,6 +210,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let r2 = r1.square();
         let r3 = r2 * r1;
 
+        let _t = start_timer!(|| format!("Interpolation, t = {}, n = {}", self.t, self.n));
         let lis_size_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let (lis_size_t_at_z, lis_size_t_at_0) = {
             let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
@@ -215,6 +220,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             lis_size_t_at_0.resize(self.n, C::ScalarField::zero());
             (lis_size_t_at_z, lis_size_t_at_0)
         };
+        end_timer!(_t);
 
         let a_coeffs: Vec<_> = lis_size_n_at_z.iter()
             .zip(lis_size_t_at_z)
@@ -224,9 +230,11 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             })
             .collect();
 
+        let _t = start_timer!(|| format!("1xG1 + 2xG2 MSMs, n = {}", self.n));
         let a_term = C::G1::msm(&tww.a, &a_coeffs).unwrap();
         let bgpk_at_z = C::G2::msm(&t.bgpk, &lis_size_n_at_z).unwrap();
         let pk_at_z = C::G2::msm(&self.bls_pks, &lis_size_n_at_z).unwrap();
+        end_timer!(_t);
 
         assert!(C::multi_pairing(
             &[a_term + t.c * r2 + t.h1 * r3, -self.g1, t.h1.into()],
