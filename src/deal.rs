@@ -13,34 +13,47 @@ use derivative::Derivative;
 use crate::{koe, single_base_msm};
 use crate::utils::BarycentricDomain;
 
+// TODO: integration test
+
 /// Parameters of a DKG ceremony.
 /// The shares are dealt to the signers identified by their BLS public keys in G2.
 /// It's critical that proofs of possession are checked for these keys.
 struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
+    /// The number of signers.
     n: usize,
+    /// The threshold, i.e. the minimal number of signers required to reconstruct the shared secret.
     t: usize,
+    /// The signers' bls public keys in G2.
     bls_pks: &'a [C::G2Affine],
+    /// An FFT-friendly multiplicative subgroup of the field of size not less than `n`.
+    /// The evaluation points are the first `n` elements of the subgroup: `x_j = w^j, j = 0,...,n-1`,
+    /// where `w` is the generator of the subgroup.
     domain: D,
+    /// Generator of G1.
     g1: C::G1,
+    /// Generator of G2.
     g2: C::G2,
 }
 
-/// Represents...
-/// `f_i` -- the dealer's secret polynomial,
-/// `sh_i` -- a secret known to the dealer, such that `h1 = sh_i.g1` and `h2 = sh_i.g2`
-/// `(bgpk_j, h2)` is precisely the El-Gamal encryption of the point `f_i(w^j).g2` with `pk_j`.
+
+/// The secret key being shared among the signers is `f(0).g2` for some polynomial `f`.
+/// `f(0).g1` is the public key, corresponding to the shared secret key. The share of the signer `j` is `f(w^j).g2`.
+/// `(h1, h2)` are points with the same discrete logarithm in G1xG2, i.e. `h1 = sh.g1` and `h2 = sh.g2` for some `sh`.
+/// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`.
+/// Then `(bgpk_j, h2)` is precisely the ElGamal encryption of the point `f_i(w^j).g2` with `pk_j` for the ephemeral secret key `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct KeysDistributed<C: Pairing> {
-    /// Signers' "threshold public keys". Actually these are El-Gamal
-    /// `bgpk_j = f_i(w^j).g2 + sh_i.pk_j, j = 0,...,n-1`,
-    bgpk: Vec<C::G2Affine>,
-    /// `h1 = sh_i.g1`
-    h1: C::G1Affine,
-    /// `h2 = sh_i.g2`
-    h2: C::G2Affine,
-    /// `f_i(0).g1` // can be computed from `A_k` as `C = 1/d.sum(A_k)`,
+struct Dealing<C: Pairing> {
+    /// The public key corresponding to the shared secret key.
+    /// `c = f(0).g1`
     c: C::G1Affine,
+    /// Shares of the secret, encrypted to the signers.
+    /// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`
+    bgpk: Vec<C::G2Affine>,
+    /// `h1 = sh.g1`
+    h1: C::G1Affine,
+    /// `h2 = sh.g2`
+    h2: C::G2Affine,
 }
 
 /// Standalone or aggregated transcript with the witness.
@@ -48,7 +61,7 @@ struct KeysDistributed<C: Pairing> {
 #[derive(Derivative)]
 #[derivative(Clone)]
 struct TranscriptWithWitness<C: Pairing> {
-    keys: KeysDistributed<C>,
+    keys: Dealing<C>,
     // transcript's consistency evidence
     /// Commitment to the secret polynomial `A_j = f_i(w^j).g1, j = 0,...,n-1`
     a: Vec<C::G1Affine>,
@@ -67,7 +80,7 @@ struct KoeProof<C: Pairing> {
     koe_proof: koe::Proof<C::G1>,
 }
 
-impl<C: Pairing> KeysDistributed<C> {
+impl<C: Pairing> Dealing<C> {
     fn merge_with(self, mut others: Vec<Self>) -> Self {
         others.push(self);
         Self::merge(&others)
@@ -108,7 +121,7 @@ impl<C: Pairing> TranscriptWithWitness<C> {
         let keys = transcripts.iter()
             .map(|t| t.keys.clone())
             .collect::<Vec<_>>();
-        let keys = KeysDistributed::merge(&keys);
+        let keys = Dealing::merge(&keys);
 
         let koe_proofs = transcripts.iter()
             .flat_map(|t|t.koe_proofs.clone())
@@ -174,7 +187,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let c = c.into_affine();
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
-        let keys = KeysDistributed { bgpk, h1, h2, c };
+        let keys = Dealing { bgpk, h1, h2, c };
         let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
         TranscriptWithWitness {
             keys,
