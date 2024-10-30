@@ -14,23 +14,26 @@ use crate::{koe, single_base_msm};
 use crate::utils::BarycentricDomain;
 
 // TODO: integration test
+// TODO: precompute the barycentric weights
+// TODO: bench for logn = 16, 20
+// TODO: Fiat-Shamir
 
 /// Aggregatable Publicly Verifiable Secret Sharing Scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
 /// corresponding to the public key `f(0).g2` in G2.
 ///
 /// There 2 types of participants:
 /// 1. a fixed list of signers, identified with their BLS public keys in G2, and
-/// 2. any number of dealers.
-/// A dealer samples a secret and produces a transcript containing encrypted shares of the secret for each signer
-/// and a proof of validity of the ciphertexts, that is publicly verifiable.
-/// Transcripts with contributions from different dealers can be aggregated in a single verifiable transcript.
-/// The scheme is secure (vaguely, the parameters generated are secure),
-/// if the final aggregated transcript is valid and contains a contribution from a single honest dealer.
+/// 2. any number of dealers, whose authentication is the problem of a higher-level protocol.
+/// A dealer samples a secret and produces a transcript containing shares of the secret, each encrypted to the corresponding signer,
+/// together with a publicly verifiable proof of validity of the ciphertexts.
+/// Transcripts with contributions from different dealers can be aggregated into a single verifiable transcript.
+/// The scheme is secure (vaguely that means the parameters produced are secure),
+/// if the final aggregated transcript is valid, and contains a contribution from a single honest dealer.
 ///
 /// *A fun property* of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
-/// Instead, anyone can use the ciphertext blindly to produce proofs that the threshold number of signers have signed.
+/// Instead, anyone can blindly use the ciphertexts to produce proofs that the threshold number of signers have signed.
 ///
-/// The implementation follows notes by Alistair Stewart
+/// The implementation follows the notes by Alistair Stewart:
 /// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
 /// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
@@ -53,8 +56,10 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     g2: C::G2,
 }
 
-/// Useful data, generated during the protocol. Encrypted shares of the secret key, the corresponding threshold public key,
-/// and a pair of points with the same discrete logarithm.
+/// Useful data produced by the protocol:
+/// - encrypted shares of the secret key,
+/// - the corresponding threshold public key, and
+/// - a pair of points with the same discrete logarithm.
 ///
 /// The secret key being shared among the signers is `f(0).g2` for some polynomial `f`.
 /// `f(0).g1` is the public key, corresponding to the shared secret key. The share of the signer `j` is `f(w^j).g2`.
@@ -86,11 +91,12 @@ struct Transcript<C: Pairing> {
     // witness data
     /// Commitment to the secret polynomial `A_j = f(w^j).g1, j = 0,...,n-1`
     a: Vec<C::G1Affine>,
-    /// Proofs of knowledge of the exponents `(f_i(0), sh_i)` such that `C_i=f_i(0).g1` and `h1_i=sh_i.g1` for every dealer `i = 1,...,k`.
+    /// Proofs of knowledge of the exponents `(f_i(0), sh_i)`
+    /// such that `C_i=f_i(0).g1` and `h1_i=sh_i.g1` for every dealer `i = 1,...,k`.
     koe_proofs: Vec<KoeProof<C>>,
 }
 
-/// Proof that the dealer `i` knows the secrets distributed.
+/// Proof that the dealer `i` knows her secrets.
 #[derive(Derivative)]
 #[derivative(Clone)]
 struct KoeProof<C: Pairing> {
