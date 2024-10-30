@@ -1,11 +1,14 @@
 use ark_ec::CurveGroup;
+use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use derivative::Derivative;
+
 use crate::utils::powers;
 
 /// Batch-verifiable proofs of knowledge of discrete logarithms
 /// of a number of `points` with respect with the same `base`.
+#[derive(CanonicalSerialize)]
 pub struct Instance<G: CurveGroup> {
     pub base: G,
     pub points: Vec<G>,
@@ -21,28 +24,34 @@ pub struct Statement<G: CurveGroup> {
 pub struct Proof<G: CurveGroup> {
     r: G,
     s: G::ScalarField,
-    c: G::ScalarField, //TODO: Fiat-Shamir
 }
 
 impl<G: CurveGroup> Statement<G> {
     pub fn prove<R: Rng>(&self, rng: &mut R) -> Proof<G> {
         let r = G::ScalarField::rand(rng);
         let r_big = self.instance.base * r;
-        let c = G::ScalarField::rand(rng); //TODO: Fiat-Shamir
+        let mut tr = ark_transcript::Transcript::new_blank();
+        tr.append(&self.instance);
+        tr.append(&r_big);
+        let c: G::ScalarField = tr.challenge(b"whatever").read_reduce();
         let s: G::ScalarField = self.dlogs.iter()
             .zip(powers(c).skip(1))
             .map(|(exp, c)| c * exp)
             .sum();
         let s = r - s;
-        Proof { r: r_big, s, c }
+        Proof { r: r_big, s }
     }
 }
 
 impl<G: CurveGroup> Instance<G> {
     pub fn verify(&self, proof: &Proof<G>) {
+        let mut tr = ark_transcript::Transcript::new_blank();
+        tr.append(self);
+        tr.append(&proof.r);
+        let c: G::ScalarField = tr.challenge(b"whatever").read_reduce();
         let p: G = self.points.iter()
-            .zip(powers(proof.c).skip(1))
-            .map(|(&r, c)| r * c)
+            .zip(powers(c).skip(1))
+            .map(|(&r, ci)| r * ci)
             .sum();
         assert_eq!(proof.r, self.base * proof.s + p)
     }
@@ -53,6 +62,7 @@ impl<G: CurveGroup> Instance<G> {
 mod tests {
     use ark_ec::Group;
     use ark_std::{test_rng, UniformRand};
+
     use crate::koe::{Instance, Statement};
 
     #[test]
