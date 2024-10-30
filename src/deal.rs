@@ -25,8 +25,12 @@ use crate::utils::BarycentricDomain;
 /// and a proof of validity of the ciphertexts, that is publicly verifiable.
 /// Transcripts with contributions from different dealers can be aggregated in a single verifiable transcript.
 ///
-/// A fun property of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
+/// *A fun property* of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
 /// Instead, anyone can use the ciphertext blindly to produce proofs that the threshold number of signers have signed.
+///
+/// The implementation follows notes by Alistair Stewart
+/// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
+/// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
 /// Parameters of an aPVSS instantiation.
 struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
@@ -47,15 +51,17 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     g2: C::G2,
 }
 
-
+/// Useful data, generated during the protocol. Encrypted shares of the secret key, the corresponding threshold public key,
+/// and a pair of points with the same discrete logarithm.
+///
 /// The secret key being shared among the signers is `f(0).g2` for some polynomial `f`.
 /// `f(0).g1` is the public key, corresponding to the shared secret key. The share of the signer `j` is `f(w^j).g2`.
-/// `(h1, h2)` are points with the same discrete logarithm in G1xG2, i.e. `h1 = sh.g1` and `h2 = sh.g2` for some `sh`.
+/// `(h1, h2)` are points in G1xG2 with the same discrete logarithm, i.e. `h1 = sh.g1` and `h2 = sh.g2` for some `sh`.
 /// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`.
-/// Then `(bgpk_j, h2)` is precisely the ElGamal encryption of the point `f_i(w^j).g2` with `pk_j` for the ephemeral secret key `sh`.
+/// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f_i(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct Shares<C: Pairing> {
+struct SharesAndMore<C: Pairing> {
     /// The public key corresponding to the shared secret key.
     /// `c = f(0).g1`
     c: C::G1Affine,
@@ -72,15 +78,17 @@ struct Shares<C: Pairing> {
 // TODO: add weights?
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct TranscriptWithWitness<C: Pairing> {
-    keys: Shares<C>,
-    // transcript's consistency evidence
-    /// Commitment to the secret polynomial `A_j = f_i(w^j).g1, j = 0,...,n-1`
+struct Transcript<C: Pairing> {
+    shares: SharesAndMore<C>,
+
+    // witness data
+    /// Commitment to the secret polynomial `A_j = f(w^j).g1, j = 0,...,n-1`
     a: Vec<C::G1Affine>,
+    /// Proofs of knowledge of the exponents `(f_i(0), sh_i)` such that `C_i=f_i(0).g1` and `h1_i=sh_i.g1` for every dealer `i = 1,...,k`.
     koe_proofs: Vec<KoeProof<C>>,
 }
 
-/// Proof that the dealer `i` knows the secrets dealt.
+/// Proof that the dealer `i` knows the secrets distributed.
 #[derive(Derivative)]
 #[derivative(Clone)]
 struct KoeProof<C: Pairing> {
@@ -92,7 +100,7 @@ struct KoeProof<C: Pairing> {
     koe_proof: koe::Proof<C::G1>,
 }
 
-impl<C: Pairing> Shares<C> {
+impl<C: Pairing> SharesAndMore<C> {
     fn merge_with(self, mut others: Vec<Self>) -> Self {
         others.push(self);
         Self::merge(&others)
@@ -115,7 +123,7 @@ impl<C: Pairing> Shares<C> {
     }
 }
 
-impl<C: Pairing> TranscriptWithWitness<C> {
+impl<C: Pairing> Transcript<C> {
     fn merge_with(self, others: &[Self])  -> Self {
         let mut others = others.to_vec();
         others.push(self);
@@ -130,17 +138,17 @@ impl<C: Pairing> TranscriptWithWitness<C> {
                 .sum::<C::G1>().into_affine()
         }).collect();
 
-        let keys = transcripts.iter()
-            .map(|t| t.keys.clone())
+        let shares = transcripts.iter()
+            .map(|t| t.shares.clone())
             .collect::<Vec<_>>();
-        let keys = Shares::merge(&keys);
+        let shares = SharesAndMore::merge(&shares);
 
         let koe_proofs = transcripts.iter()
             .flat_map(|t|t.koe_proofs.clone())
             .collect::<Vec<_>>();
 
         Self {
-            keys,
+            shares,
             a,
             koe_proofs,
         }
@@ -162,7 +170,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    fn deal<R: Rng>(&self, rng: &mut R) -> TranscriptWithWitness<C> {
+    fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
         // dealer's secrets
         let (f_mon, sh) = (DensePolynomial::rand(self.t - 1, rng), C::ScalarField::rand(rng));
         let ssk = f_mon[0];
@@ -199,18 +207,18 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let c = c.into_affine();
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
-        let keys = Shares { bgpk, h1, h2, c };
+        let shares = SharesAndMore { bgpk, h1, h2, c };
         let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
-        TranscriptWithWitness {
-            keys,
+        Transcript {
+            shares,
             a: f_lag_g1,
             koe_proofs: vec![koe_proof]
         }
     }
 
-    fn verify<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
+    fn verify<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
-        tww.koe_proofs.iter()
+        t.koe_proofs.iter()
             .for_each(|w| {
                 koe::Instance {
                     base: self.g1,
@@ -218,19 +226,19 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
                 }.verify(&w.koe_proof);
             });
 
-        let sum_c = tww.koe_proofs.iter()
+        let sum_c = t.koe_proofs.iter()
             .map(|w|w.c_i)
             .sum::<C::G1>()
             .into_affine();
 
-        let sum_h1 = tww.koe_proofs.iter()
+        let sum_h1 = t.koe_proofs.iter()
             .map(|w|w.h1_i)
             .sum::<C::G1>()
             .into_affine();
 
-        let t = &tww.keys;
-        assert_eq!(t.c, sum_c);
-        assert_eq!(t.h1, sum_h1);
+        let shares = &t.shares;
+        assert_eq!(shares.c, sum_c);
+        assert_eq!(shares.h1, sum_h1);
 
         // Merges the equations from `Self::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
         // TODO: Fiat-Shamir
@@ -259,27 +267,27 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             .collect();
 
         let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
-        let a_term = C::G1::msm(&tww.a, &a_coeffs).unwrap();
-        let bgpk_at_z = C::G2::msm(&t.bgpk, &lis_size_n_at_z).unwrap();
+        let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
+        let bgpk_at_z = C::G2::msm(&shares.bgpk, &lis_size_n_at_z).unwrap();
         let pk_at_z = C::G2::msm(&self.bls_pks, &lis_size_n_at_z).unwrap();
         end_timer!(_t);
 
         assert!(C::multi_pairing(
-            &[a_term + t.c * r2 + t.h1 * r3, -self.g1, t.h1.into()],
-            &[self.g2, bgpk_at_z + t.h2 * r3, pk_at_z]
+            &[a_term + shares.c * r2 + shares.h1 * r3, -self.g1, shares.h1.into()],
+            &[self.g2, bgpk_at_z + shares.h2 * r3, pk_at_z]
         ).is_zero());
     }
 
     #[cfg(test)]
-    fn verify_transcript_unoptimized<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R)  {
+    fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R)  {
         // 2. h2 has the same dlog as h1
-        assert_eq!(C::pairing(tww.keys.h1, self.g2), C::pairing(self.g1, tww.keys.h2));
+        assert_eq!(C::pairing(t.shares.h1, self.g2), C::pairing(self.g1, t.shares.h2));
         // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
-        self.verify_as(&tww, rng);
+        self.verify_as(&t, rng);
         // 4. `C = f(0).g1`
-        self.verify_c(&tww);
+        self.verify_c(&t);
         // 5. `bgpk`s are well-formed
-        self.verify_bgpks(&tww, rng);
+        self.verify_bgpks(&t, rng);
     }
 
     #[cfg(test)]
@@ -290,38 +298,37 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     // 3. `pk(w^j).g2 = pk_j`.
     // Then `bgpk(z) = f(z) + sh.pk(z)`, and, as `h1 = sh_i.g1`,
     // we can check that `e(g1, bgpk(z)) = e(f(z), g2) + e(h1, pk(z))`.
-    fn verify_bgpks<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
+    fn verify_bgpks<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let lis_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
-        let f_at_z_g1 = C::G1::msm(&tww.a, &lis_at_z).unwrap();
-        let bgpk_at_z_g2 = C::G2::msm(&tww.keys.bgpk, &lis_at_z).unwrap();
+        let f_at_z_g1 = C::G1::msm(&t.a, &lis_at_z).unwrap();
+        let bgpk_at_z_g2 = C::G2::msm(&t.shares.bgpk, &lis_at_z).unwrap();
         let pk_at_z_g2 = C::G2::msm(&self.bls_pks, &lis_at_z).unwrap();
         let lhs = C::pairing(self.g1, bgpk_at_z_g2);
-        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(tww.keys.h1, pk_at_z_g2);
+        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(t.shares.h1, pk_at_z_g2);
         assert_eq!(lhs, rhs);
     }
 
     #[cfg(test)]
-    fn verify_as<R: Rng>(&self, tww: &TranscriptWithWitness<C>, rng: &mut R) {
+    fn verify_as<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let ls_deg_t_at_z = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(z);
-        let f_deg_n_at_z = C::G1::msm(&tww.a, &ls_deg_n_at_z);
-        let f_deg_t_at_z = C::G1::msm(&tww.a[..self.t], &ls_deg_t_at_z);
+        let f_deg_n_at_z = C::G1::msm(&t.a, &ls_deg_n_at_z);
+        let f_deg_t_at_z = C::G1::msm(&t.a[..self.t], &ls_deg_t_at_z);
         assert_eq!(f_deg_n_at_z, f_deg_t_at_z);
     }
 
     #[cfg(test)]
-    fn verify_c(&self, tww: &TranscriptWithWitness<C>) {
+    fn verify_c(&self, t: &Transcript<C>) {
         let ls_at_0 = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(C::ScalarField::zero());
-        let f_at_0 = C::G1::msm(&tww.a[..self.t], &ls_at_0).unwrap();
-        assert_eq!(tww.keys.c, f_at_0.into_affine());
+        let f_at_0 = C::G1::msm(&t.a[..self.t], &ls_at_0).unwrap();
+        assert_eq!(t.shares.c, f_at_0.into_affine());
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use ark_ff::FftField;
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::{end_timer, start_timer, test_rng};
 
