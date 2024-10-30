@@ -15,15 +15,27 @@ use crate::utils::BarycentricDomain;
 
 // TODO: integration test
 
-/// Parameters of a DKG ceremony.
-/// The shares are dealt to the signers identified by their BLS public keys in G2.
-/// It's critical that proofs of possession are checked for these keys.
+/// Aggregatable Publicly Verifiable Secret Sharing Scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
+/// corresponding to the public key `f(0).g2` in G2.
+///
+/// There 2 types of participants:
+/// 1. a fixed list of signers, identified with their BLS public keys in G2, and
+/// 2. any number of dealers.
+/// A dealer samples a secret and produces a transcript containing encrypted shares of the secret for each signer
+/// and a proof of validity of the ciphertexts, that is publicly verifiable.
+/// Transcripts with contributions from different dealers can be aggregated in a single verifiable transcript.
+///
+/// A fun property of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
+/// Instead, anyone can use the ciphertext blindly to produce proofs that the threshold number of signers have signed.
+
+/// Parameters of an aPVSS instantiation.
 struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     /// The number of signers.
     n: usize,
     /// The threshold, i.e. the minimal number of signers required to reconstruct the shared secret.
     t: usize,
     /// The signers' bls public keys in G2.
+    /// **It's critical that proofs of possession are checked for these keys.**
     bls_pks: &'a [C::G2Affine],
     /// An FFT-friendly multiplicative subgroup of the field of size not less than `n`.
     /// The evaluation points are the first `n` elements of the subgroup: `x_j = w^j, j = 0,...,n-1`,
@@ -43,7 +55,7 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// Then `(bgpk_j, h2)` is precisely the ElGamal encryption of the point `f_i(w^j).g2` with `pk_j` for the ephemeral secret key `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct Dealing<C: Pairing> {
+struct Shares<C: Pairing> {
     /// The public key corresponding to the shared secret key.
     /// `c = f(0).g1`
     c: C::G1Affine,
@@ -57,11 +69,11 @@ struct Dealing<C: Pairing> {
 }
 
 /// Standalone or aggregated transcript with the witness.
-// TODO: add ids (and weights
+// TODO: add weights?
 #[derive(Derivative)]
 #[derivative(Clone)]
 struct TranscriptWithWitness<C: Pairing> {
-    keys: Dealing<C>,
+    keys: Shares<C>,
     // transcript's consistency evidence
     /// Commitment to the secret polynomial `A_j = f_i(w^j).g1, j = 0,...,n-1`
     a: Vec<C::G1Affine>,
@@ -80,7 +92,7 @@ struct KoeProof<C: Pairing> {
     koe_proof: koe::Proof<C::G1>,
 }
 
-impl<C: Pairing> Dealing<C> {
+impl<C: Pairing> Shares<C> {
     fn merge_with(self, mut others: Vec<Self>) -> Self {
         others.push(self);
         Self::merge(&others)
@@ -121,7 +133,7 @@ impl<C: Pairing> TranscriptWithWitness<C> {
         let keys = transcripts.iter()
             .map(|t| t.keys.clone())
             .collect::<Vec<_>>();
-        let keys = Dealing::merge(&keys);
+        let keys = Shares::merge(&keys);
 
         let koe_proofs = transcripts.iter()
             .flat_map(|t|t.koe_proofs.clone())
@@ -187,7 +199,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let c = c.into_affine();
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
-        let keys = Dealing { bgpk, h1, h2, c };
+        let keys = Shares { bgpk, h1, h2, c };
         let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
         TranscriptWithWitness {
             keys,
