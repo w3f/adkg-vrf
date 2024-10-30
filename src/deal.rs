@@ -24,6 +24,8 @@ use crate::utils::BarycentricDomain;
 /// A dealer samples a secret and produces a transcript containing encrypted shares of the secret for each signer
 /// and a proof of validity of the ciphertexts, that is publicly verifiable.
 /// Transcripts with contributions from different dealers can be aggregated in a single verifiable transcript.
+/// The scheme is secure (vaguely, the parameters generated are secure),
+/// if the final aggregated transcript is valid and contains a contribution from a single honest dealer.
 ///
 /// *A fun property* of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
 /// Instead, anyone can use the ciphertext blindly to produce proofs that the threshold number of signers have signed.
@@ -371,6 +373,16 @@ mod tests {
 
         let _t = start_timer!(|| format!("Standalone transcript validation, n = {}", n));
         params.verify(&transcript, rng);
+        end_timer!(_t);
+
+        let k = 342;
+        let transcripts = vec![transcript; k];
+        let _t = start_timer!(|| format!("Merging {} transcripts, n = {}", k, n));
+        let agg_transcript = Transcript::merge(&transcripts);
+        end_timer!(_t);
+
+        let _t = start_timer!(|| format!("Aggregate transcript validation, n = {}, k = {}", n, k));
+        params.verify(&agg_transcript, rng);
         end_timer!(_t);
     }
 
