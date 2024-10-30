@@ -21,7 +21,7 @@ use crate::utils::BarycentricDomain;
 /// Aggregatable Publicly Verifiable Secret Sharing Scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
 /// corresponding to the public key `f(0).g2` in G2.
 ///
-/// There 2 types of participants:
+/// There are 2 types of participants:
 /// 1. a fixed list of signers, identified with their BLS public keys in G2, and
 /// 2. any number of dealers, whose authentication is the problem of a higher-level protocol.
 /// A dealer samples a secret and produces a transcript containing shares of the secret, each encrypted to the corresponding signer,
@@ -65,7 +65,7 @@ struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// `f(0).g1` is the public key, corresponding to the shared secret key. The share of the signer `j` is `f(w^j).g2`.
 /// `(h1, h2)` are points in G1xG2 with the same discrete logarithm, i.e. `h1 = sh.g1` and `h2 = sh.g2` for some `sh`.
 /// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`.
-/// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f_i(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
+/// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
 struct SharesAndMore<C: Pairing> {
