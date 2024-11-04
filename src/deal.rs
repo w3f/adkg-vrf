@@ -16,6 +16,7 @@ use crate::utils::BarycentricDomain;
 // TODO: bench for logn = 16, 20
 // TODO: Fiat-Shamir
 // TODO: cofactors/subgroup checks
+// TODO: ceremony goes to lib.rs
 
 /// Aggregatable Publicly Verifiable Secret Sharing Scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
 /// corresponding to the public key `f(0).g2` in G2.
@@ -37,23 +38,22 @@ use crate::utils::BarycentricDomain;
 /// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
 /// Parameters of an aPVSS instantiation.
-struct
-Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
+pub struct  Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     /// The number of signers.
-    n: usize,
+    pub n: usize,
     /// The threshold, i.e. the minimal number of signers required to reconstruct the shared secret.
-    t: usize,
+    pub t: usize,
     /// The signers' bls public keys in G2.
     /// **It's critical that proofs of possession are checked for these keys.**
-    bls_pks: &'a [C::G2Affine],
+    pub bls_pks: &'a [C::G2Affine],
     /// An FFT-friendly multiplicative subgroup of the field of size not less than `n`.
     /// The evaluation points are the first `n` elements of the subgroup: `x_j = w^j, j = 0,...,n-1`,
     /// where `w` is the generator of the subgroup.
-    domain: D,
+    pub domain: D,
     /// Generator of G1.
-    g1: C::G1,
+    pub g1: C::G1,
     /// Generator of G2.
-    g2: C::G2,
+    pub g2: C::G2,
 }
 
 /// Useful data produced by the protocol:
