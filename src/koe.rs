@@ -9,7 +9,7 @@ use derivative::Derivative;
 use crate::utils::powers;
 
 /// Batch-verifiable proofs of knowledge of discrete logarithms
-/// of a number of `points` with respect with the same `base`.
+/// of a number of `points` with respect to the same `base`.
 #[derive(CanonicalSerialize)]
 pub struct Instance<G: CurveGroup> {
     pub base: G,

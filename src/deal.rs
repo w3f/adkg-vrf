@@ -17,6 +17,7 @@ use crate::utils::BarycentricDomain;
 // TODO: precompute the barycentric weights
 // TODO: bench for logn = 16, 20
 // TODO: Fiat-Shamir
+// TODO: cofactors/subgroup checks
 
 /// Aggregatable Publicly Verifiable Secret Sharing Scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
 /// corresponding to the public key `f(0).g2` in G2.
@@ -367,8 +368,13 @@ mod tests {
         params.verify(&agg_tww, rng);
     }
 
-    fn _bench_dkg<C: Pairing>(t: usize, n: usize) {
+    fn _bench_dkg<C: Pairing>(f: usize) {
         let rng = &mut test_rng();
+
+        // n = 3f+1 -- number of signers,
+        // t = 2f+1 -- threshold number of signers
+        // k = f+1 -- number of dealers
+        let (n, t, k) = (3 * f + 1, 2 * f + 1, f + 1);
         let signers = (0..n)
             .map(|_| C::G2Affine::rand(rng))
             .collect::<Vec<_>>();
@@ -376,21 +382,21 @@ mod tests {
             Ceremony::<C, GeneralEvaluationDomain<C::ScalarField>>::setup(
                 t, &signers,
             );
-        let _t = start_timer!(|| format!("Transcript generation, n = {}", n));
+        let _t = start_timer!(|| format!("Transcript generation, n = {}, t = {}", n, t));
         let transcript = params.deal(rng);
         end_timer!(_t);
 
-        let _t = start_timer!(|| format!("Standalone transcript validation, n = {}", n));
+        let _t = start_timer!(|| format!("Standalone transcript validation"));
         params.verify(&transcript, rng);
         end_timer!(_t);
 
         let k = 342;
         let transcripts = vec![transcript; k];
-        let _t = start_timer!(|| format!("Merging {} transcripts, n = {}", k, n));
+        let _t = start_timer!(|| format!("Merging {} transcripts", k));
         let agg_transcript = Transcript::merge(&transcripts);
         end_timer!(_t);
 
-        let _t = start_timer!(|| format!("Aggregate transcript validation, n = {}, k = {}", n, k));
+        let _t = start_timer!(|| format!("Aggregate transcript validation, k = {}", k));
         params.verify(&agg_transcript, rng);
         end_timer!(_t);
     }
@@ -398,6 +404,9 @@ mod tests {
     #[test]
     // #[ignore]
     fn bench_dkg_jam() {
-        _bench_dkg::<ark_bls12_381::Bls12_381>(682, 1023);
+        assert_eq!((2usize.pow(10) - 1) / 3, 341);
+        _bench_dkg::<ark_bls12_381::Bls12_381>(341);
+        assert_eq!((2usize.pow(16) - 1) / 3, 21845);
+        // _bench_dkg::<ark_bls12_381::Bls12_381>(21845);
     }
 }
