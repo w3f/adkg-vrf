@@ -72,7 +72,7 @@ impl<G: CurveGroup> Instance<G> {
             .collect();
         let ls: Vec<_> = claims.iter()
             .zip(powers(l))
-            .flat_map(|((x, pi), li)| iter::repeat(li).take(x.points.len() + 2))
+            .flat_map(|((x, _), li)| iter::repeat(li).take(x.points.len() + 2))
             .collect();
         assert_eq!(coeffs.len(), ls.len());
         let coeffs: Vec<_> = coeffs.into_iter()

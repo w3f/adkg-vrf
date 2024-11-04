@@ -7,14 +7,12 @@ use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer, UniformRand};
-use ark_std::iterable::Iterable;
 use derivative::Derivative;
 
 use crate::{koe, single_base_msm};
 use crate::utils::BarycentricDomain;
 
 // TODO: integration test
-// TODO: precompute the barycentric weights
 // TODO: bench for logn = 16, 20
 // TODO: Fiat-Shamir
 // TODO: cofactors/subgroup checks
@@ -39,7 +37,8 @@ use crate::utils::BarycentricDomain;
 /// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
 /// Parameters of an aPVSS instantiation.
-struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
+struct
+Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     /// The number of signers.
     n: usize,
     /// The threshold, i.e. the minimal number of signers required to reconstruct the shared secret.
@@ -95,6 +94,12 @@ struct Transcript<C: Pairing> {
     /// Proofs of knowledge of the exponents `(f_i(0), sh_i)`
     /// such that `C_i=f_i(0).g1` and `h1_i=sh_i.g1` for every dealer `i = 1,...,k`.
     koe_proofs: Vec<KoeProof<C>>,
+}
+
+/// Holds precomputed barycentric weights to facilitate the interpolation.
+struct TranscriptVerifier<C: Pairing> {
+    domain_size_n: BarycentricDomain<C::ScalarField>,
+    domain_size_t: BarycentricDomain<C::ScalarField>,
 }
 
 /// Proof that the dealer `i` knows her secrets.
@@ -225,69 +230,15 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    fn verify<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
-        // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
-        let koes = t.koe_proofs.iter()
-            .map(|w| {
-                let x = koe::Instance {
-                    base: self.g1,
-                    points: vec![w.c_i.into_group(), w.h1_i.into_group()],
-                };
-                (x, w.koe_proof.clone())
-            })
-            .collect::<Vec<_>>();
-        koe::Instance::batch_verify(&koes, rng);
-
-        let sum_c = t.koe_proofs.iter()
-            .map(|w| w.c_i)
-            .sum::<C::G1>()
-            .into_affine();
-
-        let sum_h1 = t.koe_proofs.iter()
-            .map(|w| w.h1_i)
-            .sum::<C::G1>()
-            .into_affine();
-
-        let shares = &t.shares;
-        assert_eq!(shares.c, sum_c);
-        assert_eq!(shares.h1, sum_h1);
-
-        // Merges the equations from `Self::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
-        // TODO: Fiat-Shamir
-        let (r1, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
-        let r2 = r1.square();
-        let r3 = r2 * r1;
-
+    fn verifier(&self) -> TranscriptVerifier<C> {
         let _t = start_timer!(|| "Interpolation");
-        let lis_size_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
-        let (lis_size_t_at_z, lis_size_t_at_0) = {
-            let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
-            let mut lis_size_t_at_z = domain_size_t.lagrange_basis_at(z);
-            let mut lis_size_t_at_0 = domain_size_t.lagrange_basis_at(C::ScalarField::zero());
-            lis_size_t_at_z.resize(self.n, C::ScalarField::zero());
-            lis_size_t_at_0.resize(self.n, C::ScalarField::zero());
-            (lis_size_t_at_z, lis_size_t_at_0)
-        };
+        let domain_size_n = BarycentricDomain::of_size(self.domain, self.n);
+        let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
         end_timer!(_t);
-
-        let a_coeffs: Vec<_> = lis_size_n_at_z.iter()
-            .zip(lis_size_t_at_z)
-            .zip(lis_size_t_at_0)
-            .map(|((li_n_z, li_t_z), li_t_0)| {
-                (C::ScalarField::one() - r1) * li_n_z + r1 * li_t_z - r2 * li_t_0
-            })
-            .collect();
-
-        let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
-        let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
-        let bgpk_at_z = C::G2::msm(&shares.bgpk, &lis_size_n_at_z).unwrap();
-        let pk_at_z = C::G2::msm(&self.bls_pks, &lis_size_n_at_z).unwrap();
-        end_timer!(_t);
-
-        assert!(C::multi_pairing(
-            &[a_term + shares.c * r2 + shares.h1 * r3, -self.g1, shares.h1.into()],
-            &[self.g2, bgpk_at_z + shares.h2 * r3, pk_at_z],
-        ).is_zero());
+        TranscriptVerifier {
+            domain_size_n,
+            domain_size_t,
+        }
     }
 
     #[cfg(test)]
@@ -339,6 +290,73 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 }
 
+
+impl<C: Pairing> TranscriptVerifier<C> {
+    fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
+        // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
+        let koes = t.koe_proofs.iter()
+            .map(|w| {
+                let x = koe::Instance {
+                    base: params.g1,
+                    points: vec![w.c_i.into_group(), w.h1_i.into_group()],
+                };
+                (x, w.koe_proof.clone())
+            })
+            .collect::<Vec<_>>();
+        koe::Instance::batch_verify(&koes, rng);
+
+        let sum_c = t.koe_proofs.iter()
+            .map(|w| w.c_i)
+            .sum::<C::G1>()
+            .into_affine();
+
+        let sum_h1 = t.koe_proofs.iter()
+            .map(|w| w.h1_i)
+            .sum::<C::G1>()
+            .into_affine();
+
+        let shares = &t.shares;
+        assert_eq!(shares.c, sum_c);
+        assert_eq!(shares.h1, sum_h1);
+
+        // Merges the equations from `Self::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
+        // TODO: Fiat-Shamir
+        let (r1, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
+        let r2 = r1.square();
+        let r3 = r2 * r1;
+
+        let _t = start_timer!(|| "Interpolation");
+        let lis_size_n_at_z = self.domain_size_n.lagrange_basis_at(z);
+        let (lis_size_t_at_z, lis_size_t_at_0) = {
+            let mut lis_size_t_at_z = self.domain_size_t.lagrange_basis_at(z);
+            let mut lis_size_t_at_0 = self.domain_size_t.lagrange_basis_at(C::ScalarField::zero());
+            lis_size_t_at_z.resize(params.n, C::ScalarField::zero());
+            lis_size_t_at_0.resize(params.n, C::ScalarField::zero());
+            (lis_size_t_at_z, lis_size_t_at_0)
+        };
+        end_timer!(_t);
+
+        let a_coeffs: Vec<_> = lis_size_n_at_z.iter()
+            .zip(lis_size_t_at_z)
+            .zip(lis_size_t_at_0)
+            .map(|((li_n_z, li_t_z), li_t_0)| {
+                (C::ScalarField::one() - r1) * li_n_z + r1 * li_t_z - r2 * li_t_0
+            })
+            .collect();
+
+        let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
+        let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
+        let bgpk_at_z = C::G2::msm(&shares.bgpk, &lis_size_n_at_z).unwrap();
+        let pk_at_z = C::G2::msm(&params.bls_pks, &lis_size_n_at_z).unwrap();
+        end_timer!(_t);
+
+        assert!(C::multi_pairing(
+            &[a_term + shares.c * r2 + shares.h1 * r3, -params.g1, shares.h1.into()],
+            &[params.g2, bgpk_at_z + shares.h2 * r3, pk_at_z],
+        ).is_zero());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
@@ -362,10 +380,14 @@ mod tests {
         let tww2 = params.deal(rng);
 
         params.verify_transcript_unoptimized(&tww1, rng);
-        params.verify(&tww1, rng);
+
+        let transcript_verifier = params.verifier();
+
+
+        transcript_verifier.verify(&params, &tww1, rng);
 
         let agg_tww = tww1.merge_with(&vec![tww2]);
-        params.verify(&agg_tww, rng);
+        transcript_verifier.verify(&params, &agg_tww, rng);
     }
 
     fn _bench_dkg<C: Pairing>(f: usize) {
@@ -386,8 +408,12 @@ mod tests {
         let transcript = params.deal(rng);
         end_timer!(_t);
 
+        let _t = start_timer!(|| format!("Precomputation for transcript validation"));
+        let transcript_verifier = params.verifier();
+        end_timer!(_t);
+
         let _t = start_timer!(|| format!("Standalone transcript validation"));
-        params.verify(&transcript, rng);
+        transcript_verifier.verify(&params, &transcript, rng);
         end_timer!(_t);
 
         let k = 342;
@@ -397,7 +423,7 @@ mod tests {
         end_timer!(_t);
 
         let _t = start_timer!(|| format!("Aggregate transcript validation, k = {}", k));
-        params.verify(&agg_transcript, rng);
+        transcript_verifier.verify(&params, &agg_transcript, rng);
         end_timer!(_t);
     }
 
