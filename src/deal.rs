@@ -96,7 +96,12 @@ struct Transcript<C: Pairing> {
     koe_proofs: Vec<KoeProof<C>>,
 }
 
-/// Holds precomputed barycentric weights to facilitate the interpolation.
+/// Precomputed barycentric weights to facilitate interpolation.
+/// Depend only on `(t,n)` so can be reused between the ceremonies.
+/// `Ceremony::verifier()` creates the object.
+/// TODO: 1. can be computed faster
+/// TODO: 2. can keep lis_at_0
+/// TODO: 3. lis_at_0 can be computed faster
 struct TranscriptVerifier<C: Pairing> {
     domain_size_n: BarycentricDomain<C::ScalarField>,
     domain_size_t: BarycentricDomain<C::ScalarField>,
@@ -416,7 +421,6 @@ mod tests {
         transcript_verifier.verify(&params, &transcript, rng);
         end_timer!(_t);
 
-        let k = 342;
         let transcripts = vec![transcript; k];
         let _t = start_timer!(|| format!("Merging {} transcripts", k));
         let agg_transcript = Transcript::merge(&transcripts);
