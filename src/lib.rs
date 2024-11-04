@@ -2,6 +2,7 @@ pub mod deal;
 mod signing;
 mod utils;
 pub mod koe;
+mod agg;
 
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
@@ -12,6 +13,7 @@ use ark_poly::univariate::DensePolynomial;
 use ark_std::iter;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
+use derivative::Derivative;
 use crate::signing::AggThresholdSig;
 
 // Threshold signature/VUF/VRF scheme.
@@ -86,6 +88,14 @@ struct ChadThresholdSigner<C: Pairing> {
 }
 
 impl<C: Pairing> VirginBlsSigner<C> {
+    #[cfg(test)]
+    fn new<R: Rng>(g2: C::G2, rng: &mut R) -> Self {
+        let sk = C::ScalarField::rand(rng);
+        let bls_pk_g2 = g2 * sk;
+        let bls_pk_g2 = bls_pk_g2.into_affine();
+        Self { j: 0, sk, bls_pk_g2 }
+    }
+
     fn burgerize(self, agg: &Shares<C>) -> ChadThresholdSigner<C> {
         let sk_inv = self.sk.inverse().unwrap();
         let y = agg.y[self.j];
@@ -121,6 +131,8 @@ impl<C: Pairing> ChadThresholdSigner<C> {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Clone)]
 struct StandaloneSig<C: Pairing> {
     sig: C::G1Affine,
     pk: C::G2Affine,
@@ -339,7 +351,7 @@ mod tests {
 
         // TODO: aggregate 1/3 + 1
         let agg = setup.aggregate_shares(&shares);
-        let vk = ThresholdVk::from_share(&agg);
+        let vk = ThresholdVk::from_share2(&agg);
 
         let chads: Vec<_> = signers.into_iter()
             .map(|s| s.burgerize(&agg))

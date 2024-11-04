@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::hash::Hash;
 use ark_ec::pairing::Pairing;
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ec::Group;
@@ -9,7 +11,9 @@ use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer, UniformRand};
 use derivative::Derivative;
 
-use crate::{koe, single_base_msm};
+use crate::{koe, single_base_msm, StandaloneSig, ThresholdSig, VirginBlsSigner};
+use crate::agg::SignatureAggregator;
+use crate::signing::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
 // TODO: integration test
@@ -38,7 +42,7 @@ use crate::utils::BarycentricDomain;
 /// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
 /// Parameters of an aPVSS instantiation.
-pub struct  Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
+pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     /// The number of signers.
     pub n: usize,
     /// The threshold, i.e. the minimal number of signers required to reconstruct the shared secret.
@@ -68,17 +72,17 @@ pub struct  Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct SharesAndMore<C: Pairing> {
+pub(crate) struct SharesAndMore<C: Pairing> {
     /// The public key corresponding to the shared secret key.
     /// `c = f(0).g1`
-    c: C::G1Affine,
+    pub(crate) c: C::G1Affine,
     /// Shares of the secret, encrypted to the signers.
     /// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`
     bgpk: Vec<C::G2Affine>,
     /// `h1 = sh.g1`
-    h1: C::G1Affine,
+    pub(crate) h1: C::G1Affine,
     /// `h2 = sh.g2`
-    h2: C::G2Affine,
+    pub(crate) h2: C::G2Affine,
 }
 
 /// Standalone or aggregated transcript with the witness.
@@ -235,6 +239,30 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
+    // TODO: args are not any more aggregatable
+    pub fn aggregate_augmented_sigs(&self, augmented_sigs: Vec<Option<AggThresholdSig<C>>>) -> AggThresholdSig<C> {
+        assert_eq!(augmented_sigs.len(), self.n);
+        let mut bitmask: Vec<bool> = augmented_sigs.iter().map(|o| o.is_some()).collect();
+        bitmask.resize(self.domain.size(), false);
+        let set_bits_count = bitmask.iter().filter(|b| **b).count();
+        assert!(set_bits_count >= self.t);
+        let lis = BarycentricDomain::from_subset(self.domain, &bitmask)
+            .lagrange_basis_at(C::ScalarField::zero());
+        let augmented_sigs: Vec<AggThresholdSig<C>> = augmented_sigs.into_iter()
+            .flatten()
+            .collect();
+        let bls_sigs: Vec<_> = augmented_sigs.iter().map(|s| s.bls_sig_with_pk.sig).collect();
+        let bls_pks: Vec<_> = augmented_sigs.iter().map(|s| s.bls_sig_with_pk.pk).collect();
+        let bgpks: Vec<_> = augmented_sigs.iter().map(|s| s.bgpk).collect();
+        let asig = C::G1::msm(&bls_sigs, &lis).unwrap().into_affine();
+        let apk = C::G2::msm(&bls_pks, &lis).unwrap().into_affine();
+        let abgpk = C::G2::msm(&bgpks, &lis).unwrap().into_affine();
+        AggThresholdSig {
+            bls_sig_with_pk: StandaloneSig { sig: asig, pk: apk },
+            bgpk: abgpk,
+        }
+    }
+
     fn verifier(&self) -> TranscriptVerifier<C> {
         let _t = start_timer!(|| "Interpolation");
         let domain_size_n = BarycentricDomain::of_size(self.domain, self.n);
@@ -243,6 +271,19 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         TranscriptVerifier {
             domain_size_n,
             domain_size_t,
+        }
+    }
+
+    fn aggregator(&self, final_share: SharesAndMore<C>) -> SignatureAggregator<C> {
+        let pks: HashMap<_, _> = self.bls_pks.iter()
+            .cloned()
+            .zip(final_share.bgpk)
+            .enumerate()
+            .map(|(j, (bls_pk_j, bgpk_j))| (bls_pk_j, (bgpk_j, j)))
+            .collect();
+        SignatureAggregator {
+            g2: self.g2.into_affine(),
+            pks,
         }
     }
 
@@ -366,6 +407,7 @@ impl<C: Pairing> TranscriptVerifier<C> {
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::{end_timer, start_timer, test_rng};
+    use crate::signing::ThresholdVk;
 
     use super::*;
 
@@ -374,12 +416,15 @@ mod tests {
         let rng = &mut test_rng();
 
         let (n, t) = (7, 5);
-        let signers = (0..n)
-            .map(|_| ark_bls12_381::G2Affine::rand(rng))
-            .collect::<Vec<_>>();
+        let signers: Vec<VirginBlsSigner<ark_bls12_381::Bls12_381>> = (0..n)
+            .map(|_| VirginBlsSigner::new(ark_bls12_381::G2Projective::generator(), rng))
+            .collect();
+        let signers_pks: Vec<_> = signers.iter()
+            .map(|s| s.bls_pk_g2)
+            .collect();
         let params =
             Ceremony::<ark_bls12_381::Bls12_381, GeneralEvaluationDomain<ark_bls12_381::Fr>>::setup(
-                t, &signers,
+                t, &signers_pks,
             );
         let tww1 = params.deal(rng);
         let tww2 = params.deal(rng);
@@ -388,11 +433,23 @@ mod tests {
 
         let transcript_verifier = params.verifier();
 
-
         transcript_verifier.verify(&params, &tww1, rng);
 
         let agg_tww = tww1.merge_with(&vec![tww2]);
         transcript_verifier.verify(&params, &agg_tww, rng);
+
+        let m = ark_bls12_381::G1Projective::generator();
+        let sigs: Vec<_> = signers.iter()
+            .map(|s| s.sign(m))
+            .collect();
+
+        let vk = ThresholdVk::from_share(&agg_tww.shares);
+        let aggregator = params.aggregator(agg_tww.shares);
+
+        let mut session = aggregator.start_session(m.into_affine());
+        session.append_verify_sigs(sigs);
+        let threshold_sig = session.finalize(&params);
+        // vk.verify(&threshold_sig);
     }
 
     fn _bench_dkg<C: Pairing>(f: usize) {
@@ -432,7 +489,7 @@ mod tests {
     }
 
     #[test]
-    // #[ignore]
+    #[ignore]
     fn bench_dkg_jam() {
         assert_eq!((2usize.pow(10) - 1) / 3, 341);
         _bench_dkg::<ark_bls12_381::Bls12_381>(341);
