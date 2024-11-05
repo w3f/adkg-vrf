@@ -3,7 +3,6 @@ use ark_ec::pairing::Pairing;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use derivative::Derivative;
-use crate::signing::AggThresholdSig;
 
 pub struct BlsSigner<C: Pairing> {
     sk: C::ScalarField,
@@ -11,7 +10,7 @@ pub struct BlsSigner<C: Pairing> {
 }
 
 #[derive(Derivative)]
-#[derivative(Clone)]
+#[derivative(Clone, Debug, PartialEq)]
 pub struct StandaloneSig<C: Pairing> {
     pub sig: C::G1Affine,
     pub pk: C::G2Affine,

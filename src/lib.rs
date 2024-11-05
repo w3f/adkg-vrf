@@ -67,10 +67,16 @@ mod tests {
         let threshold_vk = ThresholdVk::from_share(&agg_transcript.shares);
         let sig_aggregator = params.aggregator(agg_transcript.shares);
 
-        let mut sig_agg_session = sig_aggregator.start_session(message.into_affine());
-        sig_agg_session.append_verify_sigs(sigs);
-        let threshold_sig = sig_agg_session.finalize(&params);
-        threshold_vk.verify(&threshold_sig, message);
+        let mut sig_agg_session_n = sig_aggregator.start_session(message.into_affine());
+        sig_agg_session_n.append_verify_sigs(sigs.clone());
+        let threshold_sig_n = sig_agg_session_n.finalize(&params);
+        let vuf_n = threshold_vk.vuf_unoptimized(&threshold_sig_n, message);
+
+        let mut sig_agg_session_t = sig_aggregator.start_session(message.into_affine());
+        sig_agg_session_t.append_verify_sigs(sigs.into_iter().take(t).collect());
+        let threshold_sig_t = sig_agg_session_t.finalize(&params);
+        let vuf_t = threshold_vk.vuf_unoptimized(&threshold_sig_t, message);
+        assert_eq!(vuf_t, vuf_n);
     }
 
     #[test]

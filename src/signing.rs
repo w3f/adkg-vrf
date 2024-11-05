@@ -1,5 +1,5 @@
 use ark_ec::Group;
-use ark_ec::pairing::Pairing;
+use ark_ec::pairing::{Pairing, PairingOutput};
 use derivative::Derivative;
 
 use crate::bls::StandaloneSig;
@@ -18,7 +18,7 @@ pub struct ThresholdVk<C: Pairing> {
 }
 
 #[derive(Derivative)]
-#[derivative(Clone)]
+#[derivative(Clone, Debug, PartialEq)]
 pub struct AggThresholdSig<C: Pairing> {
     pub(crate) bls_sig_with_pk: StandaloneSig<C>,
     pub(crate) bgpk: C::G2Affine,
@@ -36,11 +36,16 @@ impl<C: Pairing> ThresholdVk<C> {
         }
     }
 
-    pub fn verify(&self, sig: &AggThresholdSig<C>, message: C::G1) {
+    pub fn verify_unoptimized(&self, sig: &AggThresholdSig<C>, message: C::G1) {
         sig.bls_sig_with_pk.verify_unoptimized(message, self.g2.into());
         assert_eq!(
             C::pairing(self.g1.into(), sig.bgpk),
             C::multi_pairing(&[self.c, self.h1], &[self.g2.into(), sig.bls_sig_with_pk.pk])
         );
+    }
+
+    pub fn vuf_unoptimized(&self, sig: &AggThresholdSig<C>, message: C::G1) -> PairingOutput<C> {
+        self.verify_unoptimized(sig, message);
+        C::multi_pairing(&[(-message).into(), sig.bls_sig_with_pk.sig], &[sig.bgpk, self.h2])
     }
 }
