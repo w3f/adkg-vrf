@@ -15,3 +15,6 @@ derivative = "2.2.0"
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", default-features = false, features = ["curve"] }
+
+[features]
+print-trace = ["ark-std/print-trace"]

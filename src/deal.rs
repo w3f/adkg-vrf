@@ -411,45 +411,44 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn it_works() {
+    fn _it_works<C: Pairing>() {
         let rng = &mut test_rng();
 
         let (n, t) = (7, 5);
-        let signers: Vec<VirginBlsSigner<ark_bls12_381::Bls12_381>> = (0..n)
-            .map(|_| VirginBlsSigner::new(ark_bls12_381::G2Projective::generator(), rng))
+        let signers: Vec<VirginBlsSigner<C>> = (0..n)
+            .map(|_| VirginBlsSigner::new(C::G2::generator(), rng))
             .collect();
         let signers_pks: Vec<_> = signers.iter()
             .map(|s| s.bls_pk_g2)
             .collect();
-        let params =
-            Ceremony::<ark_bls12_381::Bls12_381, GeneralEvaluationDomain<ark_bls12_381::Fr>>::setup(
-                t, &signers_pks,
-            );
-        let tww1 = params.deal(rng);
-        let tww2 = params.deal(rng);
-
-        params.verify_transcript_unoptimized(&tww1, rng);
-
+        let params = Ceremony::<C, GeneralEvaluationDomain<C::ScalarField>>::setup(t, &signers_pks);
         let transcript_verifier = params.verifier();
 
-        transcript_verifier.verify(&params, &tww1, rng);
+        let transcript = params.deal(rng);
+        params.verify_transcript_unoptimized(&transcript, rng);
+        transcript_verifier.verify(&params, &transcript, rng);
 
-        let agg_tww = tww1.merge_with(&vec![tww2]);
-        transcript_verifier.verify(&params, &agg_tww, rng);
+        let another_transcript = params.deal(rng);
+        let agg_transcript = transcript.merge_with(&vec![another_transcript]);
+        transcript_verifier.verify(&params, &agg_transcript, rng);
 
-        let m = ark_bls12_381::G1Projective::generator();
+        let message = C::G1::generator();
         let sigs: Vec<_> = signers.iter()
-            .map(|s| s.sign(m))
+            .map(|s| s.sign(message))
             .collect();
 
-        let vk = ThresholdVk::from_share(&agg_tww.shares);
-        let aggregator = params.aggregator(agg_tww.shares);
+        let threshold_vk = ThresholdVk::from_share(&agg_transcript.shares);
+        let sig_aggregator = params.aggregator(agg_transcript.shares);
 
-        let mut session = aggregator.start_session(m.into_affine());
-        session.append_verify_sigs(sigs);
-        let threshold_sig = session.finalize(&params);
-        // vk.verify(&threshold_sig);
+        let mut sig_agg_session = sig_aggregator.start_session(message.into_affine());
+        sig_agg_session.append_verify_sigs(sigs);
+        let threshold_sig = sig_agg_session.finalize(&params);
+        threshold_vk.verify(&threshold_sig);
+    }
+
+    #[test]
+    fn it_works() {
+        _it_works::<ark_bls12_381::Bls12_381>()
     }
 
     fn _bench_dkg<C: Pairing>(f: usize) {
@@ -490,10 +489,17 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn bench_dkg_jam() {
+    #[cfg(all(not(debug_assertions), feature = "print-trace"))]
+    fn bench_dkg_10() {
         assert_eq!((2usize.pow(10) - 1) / 3, 341);
         _bench_dkg::<ark_bls12_381::Bls12_381>(341);
+    }
+
+    #[test]
+    #[ignore]
+    #[cfg(all(not(debug_assertions), feature = "print-trace"))]
+    fn bench_dkg_16() {
         assert_eq!((2usize.pow(16) - 1) / 3, 21845);
-        // _bench_dkg::<ark_bls12_381::Bls12_381>(21845);
+        _bench_dkg::<ark_bls12_381::Bls12_381>(21845);
     }
 }
