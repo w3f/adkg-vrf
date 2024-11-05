@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ec::Group;
 use ark_ec::pairing::Pairing;
-use ark_ff::{Field, One, Zero};
+use ark_ec::scalar_mul::fixed_base::FixedBase;
+use ark_ff::{Field, One, PrimeField, Zero};
 use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_poly::univariate::DensePolynomial;
@@ -11,9 +12,9 @@ use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::rand::Rng;
 use derivative::Derivative;
 
-use crate::{koe, single_base_msm};
 use crate::agg::SignatureAggregator;
 use crate::bls::StandaloneSig;
+use crate::koe;
 use crate::signing::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
@@ -90,8 +91,8 @@ pub(crate) struct SharesAndMore<C: Pairing> {
 // TODO: add weights?
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct Transcript<C: Pairing> {
-    shares: SharesAndMore<C>,
+pub struct Transcript<C: Pairing> {
+    pub shares: SharesAndMore<C>,
 
     // witness data
     /// Commitment to the secret polynomial `A_j = f(w^j).g1, j = 0,...,n-1`
@@ -107,7 +108,7 @@ struct Transcript<C: Pairing> {
 /// TODO: 1. can be computed faster
 /// TODO: 2. can keep lis_at_0
 /// TODO: 3. lis_at_0 can be computed faster
-struct TranscriptVerifier<C: Pairing> {
+pub struct TranscriptVerifier<C: Pairing> {
     domain_size_n: BarycentricDomain<C::ScalarField>,
     domain_size_t: BarycentricDomain<C::ScalarField>,
 }
@@ -148,7 +149,7 @@ impl<C: Pairing> SharesAndMore<C> {
 }
 
 impl<C: Pairing> Transcript<C> {
-    fn merge_with(self, others: &[Self]) -> Self {
+    pub fn merge_with(self, others: &[Self]) -> Self {
         let mut others = others.to_vec();
         others.push(self);
         Self::merge(&others)
@@ -180,7 +181,7 @@ impl<C: Pairing> Transcript<C> {
 }
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
-    fn setup(t: usize, bls_pks: &'a [C::G2Affine]) -> Self {
+    pub fn setup(t: usize, bls_pks: &'a [C::G2Affine]) -> Self {
         let n = bls_pks.len();
         assert!(t <= n);
         //todo: test t = 1, t = n
@@ -194,7 +195,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
+    pub fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
         // dealer's secrets
         let (f_mon, sh) = (DensePolynomial::rand(self.t - 1, rng), C::ScalarField::rand(rng));
         let ssk = f_mon[0];
@@ -264,7 +265,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    fn verifier(&self) -> TranscriptVerifier<C> {
+    pub fn verifier(&self) -> TranscriptVerifier<C> {
         let _t = start_timer!(|| "Interpolation");
         let domain_size_n = BarycentricDomain::of_size(self.domain, self.n);
         let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
@@ -275,7 +276,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    fn aggregator(&self, final_share: SharesAndMore<C>) -> SignatureAggregator<C> {
+    pub fn aggregator(&self, final_share: SharesAndMore<C>) -> SignatureAggregator<C> {
         let pks: HashMap<_, _> = self.bls_pks.iter()
             .cloned()
             .zip(final_share.bgpk)
@@ -289,7 +290,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 
     #[cfg(test)]
-    fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+    pub fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
         // 2. h2 has the same dlog as h1
         assert_eq!(C::pairing(t.shares.h1, self.g2), C::pairing(self.g1, t.shares.h2));
         // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
@@ -339,7 +340,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
 
 impl<C: Pairing> TranscriptVerifier<C> {
-    fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
+    pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
         let koes = t.koe_proofs.iter()
             .map(|w| {
@@ -408,51 +409,8 @@ impl<C: Pairing> TranscriptVerifier<C> {
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::{end_timer, start_timer, test_rng};
-    use crate::bls::BlsSigner;
-
-    use crate::signing::ThresholdVk;
 
     use super::*;
-
-    fn _it_works<C: Pairing>() {
-        let rng = &mut test_rng();
-
-        let (n, t) = (7, 5);
-        let signers: Vec<BlsSigner<C>> = (0..n)
-            .map(|_| BlsSigner::new(C::G2::generator(), rng))
-            .collect();
-        let signers_pks: Vec<_> = signers.iter()
-            .map(|s| s.bls_pk_g2)
-            .collect();
-        let params = Ceremony::<C, GeneralEvaluationDomain<C::ScalarField>>::setup(t, &signers_pks);
-        let transcript_verifier = params.verifier();
-
-        let transcript = params.deal(rng);
-        params.verify_transcript_unoptimized(&transcript, rng);
-        transcript_verifier.verify(&params, &transcript, rng);
-
-        let another_transcript = params.deal(rng);
-        let agg_transcript = transcript.merge_with(&vec![another_transcript]);
-        transcript_verifier.verify(&params, &agg_transcript, rng);
-
-        let message = C::G1::generator();
-        let sigs: Vec<_> = signers.iter()
-            .map(|s| s.sign(message))
-            .collect();
-
-        let threshold_vk = ThresholdVk::from_share(&agg_transcript.shares);
-        let sig_aggregator = params.aggregator(agg_transcript.shares);
-
-        let mut sig_agg_session = sig_aggregator.start_session(message.into_affine());
-        sig_agg_session.append_verify_sigs(sigs);
-        let threshold_sig = sig_agg_session.finalize(&params);
-        threshold_vk.verify(&threshold_sig);
-    }
-
-    #[test]
-    fn it_works() {
-        _it_works::<ark_bls12_381::Bls12_381>()
-    }
 
     fn _bench_dkg<C: Pairing>(f: usize) {
         let rng = &mut test_rng();
@@ -502,4 +460,13 @@ mod tests {
         assert_eq!((2usize.pow(16) - 1) / 3, 21845);
         _bench_dkg::<ark_bls12_381::Bls12_381>(21845);
     }
+}
+
+// Multiply the same base by each scalar.
+pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C::Affine> {
+    let window_size = FixedBase::get_mul_window_size(scalars.len());
+    let bits_in_scalar = C::ScalarField::MODULUS_BIT_SIZE.try_into().unwrap();
+    let table = FixedBase::get_window_table(bits_in_scalar, window_size, g);
+    let scalars_in_g = FixedBase::msm(bits_in_scalar, window_size, &table, scalars);
+    C::normalize_batch(&scalars_in_g)
 }
