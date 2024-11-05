@@ -8,8 +8,9 @@
 ///    and additionally produce a VUF output.
 ///
 /// An interesting property of the scheme is that the signers are not required to participate
-/// in the protocol in any way. That allows to transform any deployed BLS signature scheme,
-/// where the same messages are being signed, into a threshold scheme or a randomness beacon.
+/// in the protocol in any way other than producing vanilla BLS signatures.
+/// That allows to transform any deployed BLS signature scheme, where the same message is being signed by multiple signers,
+/// into a threshold scheme or a randomness beacon.
 ///
 /// The implementation follows the notes by Alistair Stewart:
 /// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
