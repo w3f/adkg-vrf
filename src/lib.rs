@@ -1,23 +1,19 @@
-use ark_ec::{CurveGroup, Group};
-use ark_ec::pairing::Pairing;
-use ark_ff::PrimeField;
-
 /// Threshold Verifiable Unpredictable Function (VUF) scheme.
 /// Produces an unpredictable output by aggregating a threshold number of vanilla BLS signatures on the input.
-
-// Follows https://hackmd.io/3968Gr5hSSmef-nptg2GRw
-
-// There is a set of signers identified by an ordered array of their BLS public keys in G2.
-// Each signer knows his BLS secret key and his index in the array.
-
-// There is a set of dealers (that may or may not intersect with the set of signers)
-
-
-// `d` -- domain size (`N` in the hackmd), indexed by `k`
-// `n <= d` -- signer set size (`n` in the hackmd), indexed by `j`
-// `t <= n` -- the threshold, `deg(f) = t-1` for the secret-shared polynomial 'f'
-// that gives a `t` out of `n` threshold scheme
-// Dealers are indexed by `i`, their number is arbitrary.
+///
+/// The scheme comprises 2 parts:
+/// 1. a Distributed Key Generation (DKG) protocol that produces some data for a set of BLS signers, and
+/// 2. a BLS signature aggregation scheme that leverages the data produced by the DKG
+///    to aggregate the signatures from a subset of the signers into a threshold signature,
+///    and additionally produce a VUF output.
+///
+/// An interesting property of the scheme is that the signers are not required to participate
+/// in the protocol in any way. That allows to transform any deployed BLS signature scheme,
+/// where the same messages are being signed, into a threshold scheme or a randomness beacon.
+///
+/// The implementation follows the notes by Alistair Stewart:
+/// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
+/// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
 pub mod deal;
 mod signing;

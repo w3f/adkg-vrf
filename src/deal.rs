@@ -38,10 +38,12 @@ use crate::utils::BarycentricDomain;
 ///
 /// *A fun property* of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
 /// Instead, anyone can blindly use the ciphertexts to produce proofs that the threshold number of signers have signed.
-///
-/// The implementation follows the notes by Alistair Stewart:
-/// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
-/// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
+
+// `d` -- domain size (`N` in the hackmd), indexed by `k`
+// `n <= d` -- signer set size (`n` in the hackmd), indexed by `j`
+// `t <= n` -- the threshold, `deg(f) = t-1` for the secret-shared polynomial 'f'
+// that gives a `t` out of `n` threshold scheme
+// Dealers are indexed by `i`, their number is arbitrary.
 
 /// Parameters of an aPVSS instantiation.
 pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
@@ -405,6 +407,15 @@ impl<C: Pairing> TranscriptVerifier<C> {
     }
 }
 
+// Multiply the same base by each scalar.
+pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C::Affine> {
+    let window_size = FixedBase::get_mul_window_size(scalars.len());
+    let bits_in_scalar = C::ScalarField::MODULUS_BIT_SIZE.try_into().unwrap();
+    let table = FixedBase::get_window_table(bits_in_scalar, window_size, g);
+    let scalars_in_g = FixedBase::msm(bits_in_scalar, window_size, &table, scalars);
+    C::normalize_batch(&scalars_in_g)
+}
+
 #[cfg(test)]
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
@@ -460,13 +471,4 @@ mod tests {
         assert_eq!((2usize.pow(16) - 1) / 3, 21845);
         _bench_dkg::<ark_bls12_381::Bls12_381>(21845);
     }
-}
-
-// Multiply the same base by each scalar.
-pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C::Affine> {
-    let window_size = FixedBase::get_mul_window_size(scalars.len());
-    let bits_in_scalar = C::ScalarField::MODULUS_BIT_SIZE.try_into().unwrap();
-    let table = FixedBase::get_window_table(bits_in_scalar, window_size, g);
-    let scalars_in_g = FixedBase::msm(bits_in_scalar, window_size, &table, scalars);
-    C::normalize_batch(&scalars_in_g)
 }
