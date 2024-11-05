@@ -13,9 +13,9 @@ use ark_std::rand::Rng;
 use derivative::Derivative;
 
 use crate::agg::SignatureAggregator;
-use crate::vanilla::StandaloneSig;
+use crate::bls::vanilla::StandaloneSig;
 use crate::koe;
-use crate::threshold::AggThresholdSig;
+use crate::bls::threshold::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
 // TODO: integration test

@@ -18,11 +18,10 @@
 
 /// Aggregatable Publicly Verifiable Secret Sharing Scheme
 pub mod dkg;
-mod vanilla;
-pub mod threshold;
 mod utils;
 pub mod koe;
 mod agg;
+mod bls;
 
 #[cfg(test)]
 mod tests {
@@ -35,9 +34,9 @@ mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::test_rng;
 
-    use crate::vanilla::BlsSigner;
+    use crate::bls::vanilla::BlsSigner;
     use crate::dkg::dealer::Ceremony;
-    use crate::threshold::ThresholdVk;
+    use crate::bls::threshold::ThresholdVk;
 
     fn _it_works<C: Pairing>() {
         let rng = &mut test_rng();

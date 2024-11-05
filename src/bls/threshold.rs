@@ -2,7 +2,7 @@ use ark_ec::Group;
 use ark_ec::pairing::{Pairing, PairingOutput};
 use derivative::Derivative;
 
-use crate::vanilla::StandaloneSig;
+use crate::bls::vanilla::StandaloneSig;
 use crate::dkg::dealer::SharesAndMore;
 
 // Used to verify aggregated threshold signatures.
