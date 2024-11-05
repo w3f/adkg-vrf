@@ -46,6 +46,7 @@ impl<C: Pairing> ThresholdVk<C> {
             g2: C::G2::generator(),
         }
     }
+
     pub fn verify(&self, sig: &AggThresholdSig<C>) {
         assert_eq!(
             C::pairing(self.g1.into(), sig.bgpk),

@@ -1,9 +1,3 @@
-pub mod deal;
-mod signing;
-mod utils;
-pub mod koe;
-mod agg;
-
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
 use ark_ec::scalar_mul::fixed_base::FixedBase;
@@ -14,7 +8,15 @@ use ark_std::iter;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use derivative::Derivative;
+
 use crate::signing::AggThresholdSig;
+
+pub mod deal;
+mod signing;
+mod utils;
+pub mod koe;
+mod agg;
+mod bls;
 
 // Threshold signature/VUF/VRF scheme.
 // Follows https://hackmd.io/3968Gr5hSSmef-nptg2GRw
@@ -74,61 +76,6 @@ struct GlobalSetup<C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     domain: D,
     g1: C::G1,
     g2: C::G2,
-}
-
-struct VirginBlsSigner<C: Pairing> {
-    j: usize, // signer's index in the set, see comments to `GlobalSetup::dealer()`
-    sk: C::ScalarField,
-    bls_pk_g2: C::G2Affine, //TODO: prepared/proj?
-}
-
-struct ChadThresholdSigner<C: Pairing> {
-    bls_signer: VirginBlsSigner<C>,
-    bgpk: C::G2Affine,
-}
-
-impl<C: Pairing> VirginBlsSigner<C> {
-    #[cfg(test)]
-    fn new<R: Rng>(g2: C::G2, rng: &mut R) -> Self {
-        let sk = C::ScalarField::rand(rng);
-        let bls_pk_g2 = g2 * sk;
-        let bls_pk_g2 = bls_pk_g2.into_affine();
-        Self { j: 0, sk, bls_pk_g2 }
-    }
-
-    fn burgerize(self, agg: &Shares<C>) -> ChadThresholdSigner<C> {
-        let sk_inv = self.sk.inverse().unwrap();
-        let y = agg.y[self.j];
-        // `gsk = f_agg(w^j).G2`
-        // decryption of the aggregate share belonging to the signer
-        let gsk = y * sk_inv;
-        let bgpk = gsk + agg.h2 * self.sk; // `gsk` re-randomized with the `sk`
-        let bgpk = bgpk.into_affine();
-        ChadThresholdSigner {
-            bls_signer: self,
-            bgpk,
-        }
-    }
-
-    fn sign(&self, m: C::G1) -> StandaloneSig<C> {
-        let sig = m * self.sk;
-        let sig = sig.into_affine();
-        StandaloneSig {
-            sig,
-            pk: self.bls_pk_g2,
-        }
-    }
-}
-
-impl<C: Pairing> ChadThresholdSigner<C> {
-    fn sign(&self, &m: &C::G1) -> ThresholdSig<C> {
-        let bls_sig_with_pk = self.bls_signer.sign(m);
-        ThresholdSig {
-            j: self.bls_signer.j,
-            bls_sig_with_pk,
-            threshold_pk: self.bgpk,
-        }
-    }
 }
 
 #[derive(Derivative)]
@@ -210,13 +157,6 @@ impl<C: Pairing, D: EvaluationDomain<C::ScalarField>> GlobalSetup<C, D> {
             g2: self.g2,
             bls_pks,
         }
-    }
-
-    fn signer<R: Rng>(&self, j: usize, rng: &mut R) -> VirginBlsSigner<C> {
-        let sk = C::ScalarField::rand(rng);
-        let bls_pk_g2 = self.g2 * sk;
-        let bls_pk_g2 = bls_pk_g2.into_affine();
-        VirginBlsSigner { j, sk, bls_pk_g2 }
     }
 
     // 1. `A_k, k = 0,...,d-1` is a commitment to a polynomial `f` such that `deg(f) < t`.
@@ -319,7 +259,9 @@ pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C
 mod tests {
     use ark_poly::{GeneralEvaluationDomain, Polynomial};
     use ark_std::test_rng;
+
     use crate::signing::ThresholdVk;
+
     use super::*;
 
     #[test]

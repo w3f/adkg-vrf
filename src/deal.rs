@@ -1,18 +1,20 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use ark_ec::pairing::Pairing;
+
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ec::Group;
+use ark_ec::pairing::Pairing;
 use ark_ff::{Field, One, Zero};
-use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
-use ark_std::rand::Rng;
+use ark_poly::univariate::DensePolynomial;
 use ark_std::{end_timer, start_timer, UniformRand};
+use ark_std::rand::Rng;
 use derivative::Derivative;
 
-use crate::{koe, single_base_msm, StandaloneSig, ThresholdSig, VirginBlsSigner};
+use crate::{koe, single_base_msm, StandaloneSig};
 use crate::agg::SignatureAggregator;
+use crate::bls::BlsSigner;
 use crate::signing::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
@@ -407,6 +409,7 @@ impl<C: Pairing> TranscriptVerifier<C> {
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::{end_timer, start_timer, test_rng};
+
     use crate::signing::ThresholdVk;
 
     use super::*;
@@ -415,8 +418,8 @@ mod tests {
         let rng = &mut test_rng();
 
         let (n, t) = (7, 5);
-        let signers: Vec<VirginBlsSigner<C>> = (0..n)
-            .map(|_| VirginBlsSigner::new(C::G2::generator(), rng))
+        let signers: Vec<BlsSigner<C>> = (0..n)
+            .map(|_| BlsSigner::new(C::G2::generator(), rng))
             .collect();
         let signers_pks: Vec<_> = signers.iter()
             .map(|s| s.bls_pk_g2)
@@ -461,10 +464,7 @@ mod tests {
         let signers = (0..n)
             .map(|_| C::G2Affine::rand(rng))
             .collect::<Vec<_>>();
-        let params =
-            Ceremony::<C, GeneralEvaluationDomain<C::ScalarField>>::setup(
-                t, &signers,
-            );
+        let params = Ceremony::<C, GeneralEvaluationDomain<C::ScalarField>>::setup(t, &signers);
         let _t = start_timer!(|| format!("Transcript generation, n = {}, t = {}", n, t));
         let transcript = params.deal(rng);
         end_timer!(_t);
