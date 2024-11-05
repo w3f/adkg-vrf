@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ark_ec::pairing::Pairing;
 use ark_poly::EvaluationDomain;
 
-use crate::deal::Ceremony;
+use crate::dkg::dealer::Ceremony;
 use crate::signing::AggThresholdSig;
 use crate::bls::StandaloneSig;
 

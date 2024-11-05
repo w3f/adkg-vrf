@@ -16,7 +16,7 @@
 /// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
 /// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
-pub mod deal;
+pub mod dkg;
 mod signing;
 mod utils;
 pub mod koe;
@@ -35,7 +35,7 @@ mod tests {
     use ark_std::test_rng;
 
     use crate::bls::BlsSigner;
-    use crate::deal::Ceremony;
+    use crate::dkg::dealer::Ceremony;
     use crate::signing::ThresholdVk;
 
     fn _it_works<C: Pairing>() {

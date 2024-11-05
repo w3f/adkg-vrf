@@ -3,7 +3,7 @@ use ark_ec::pairing::{Pairing, PairingOutput};
 use derivative::Derivative;
 
 use crate::bls::StandaloneSig;
-use crate::deal::SharesAndMore;
+use crate::dkg::dealer::SharesAndMore;
 
 // Used to verify aggregated threshold signatures.
 // `c = f(0).g1` is the public key associated with the dealing.
