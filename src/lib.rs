@@ -70,7 +70,7 @@ mod tests {
         let mut sig_agg_session = sig_aggregator.start_session(message.into_affine());
         sig_agg_session.append_verify_sigs(sigs);
         let threshold_sig = sig_agg_session.finalize(&params);
-        threshold_vk.verify(&threshold_sig);
+        threshold_vk.verify(&threshold_sig, message);
     }
 
     #[test]

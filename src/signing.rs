@@ -36,7 +36,8 @@ impl<C: Pairing> ThresholdVk<C> {
         }
     }
 
-    pub fn verify(&self, sig: &AggThresholdSig<C>) {
+    pub fn verify(&self, sig: &AggThresholdSig<C>, message: C::G1) {
+        sig.bls_sig_with_pk.verify_unoptimized(message, self.g2.into());
         assert_eq!(
             C::pairing(self.g1.into(), sig.bgpk),
             C::multi_pairing(&[self.c, self.h1], &[self.g2.into(), sig.bls_sig_with_pk.pk])

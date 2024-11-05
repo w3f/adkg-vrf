@@ -3,6 +3,7 @@ use ark_ec::pairing::Pairing;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use derivative::Derivative;
+use crate::signing::AggThresholdSig;
 
 pub struct BlsSigner<C: Pairing> {
     sk: C::ScalarField,
@@ -31,6 +32,15 @@ impl<C: Pairing> BlsSigner<C> {
             sig,
             pk: self.bls_pk_g2,
         }
+    }
+}
+
+impl<C: Pairing> StandaloneSig<C> {
+    pub fn verify_unoptimized(&self, m: C::G1, g2: C::G2Affine) {
+        assert_eq!(
+            C::pairing(self.sig, g2),
+            C::pairing(m.into(), self.pk)
+        );
     }
 }
 

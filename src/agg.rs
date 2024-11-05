@@ -53,11 +53,7 @@ impl<'a, C: Pairing> Session<'a, C> {
             x.unwrap().clone()
         };
         assert!(self.augmented_sigs[j].is_none());
-        // BLS signature check
-        assert_eq!(
-            C::pairing(sig.sig, self.g2),
-            C::pairing(self.message, sig.pk)
-        );
+        sig.verify_unoptimized(self.message.into(), self.g2);
         self.augmented_sigs[j] = Some(AggThresholdSig {
             bls_sig_with_pk: sig,
             bgpk,
