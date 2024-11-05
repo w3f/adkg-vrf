@@ -4,8 +4,8 @@ use ark_ec::pairing::Pairing;
 use ark_poly::EvaluationDomain;
 
 use crate::dkg::dealer::Ceremony;
-use crate::signing::AggThresholdSig;
-use crate::bls::StandaloneSig;
+use crate::threshold::AggThresholdSig;
+use crate::vanilla::StandaloneSig;
 
 pub struct SignatureAggregator<C: Pairing> {
     // to verify BLS sigs with the keys in G2

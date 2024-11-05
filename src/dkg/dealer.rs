@@ -13,9 +13,9 @@ use ark_std::rand::Rng;
 use derivative::Derivative;
 
 use crate::agg::SignatureAggregator;
-use crate::bls::StandaloneSig;
+use crate::vanilla::StandaloneSig;
 use crate::koe;
-use crate::signing::AggThresholdSig;
+use crate::threshold::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
 // TODO: integration test
@@ -23,21 +23,6 @@ use crate::utils::BarycentricDomain;
 // TODO: Fiat-Shamir
 // TODO: cofactors/subgroup checks
 // TODO: ceremony goes to lib.rs
-
-/// Aggregatable Publicly Verifiable Secret Sharing Scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
-/// corresponding to the public key `f(0).g2` in G2.
-///
-/// There are 2 types of participants:
-/// 1. a fixed list of signers, identified with their BLS public keys in G2, and
-/// 2. any number of dealers, whose authentication is the problem of a higher-level protocol.
-/// A dealer samples a secret and produces a transcript containing shares of the secret, each encrypted to the corresponding signer,
-/// together with a publicly verifiable proof of validity of the ciphertexts.
-/// Transcripts with contributions from different dealers can be aggregated into a single verifiable transcript.
-/// The scheme is secure (vaguely that means the parameters produced are secure),
-/// if the final aggregated transcript is valid, and contains a contribution from a single honest dealer.
-///
-/// *A fun property* of the scheme is that signers don't have to use (or even decrypt) their shares in any way.
-/// Instead, anyone can blindly use the ciphertexts to produce proofs that the threshold number of signers have signed.
 
 // `d` -- domain size (`N` in the hackmd), indexed by `k`
 // `n <= d` -- signer set size (`n` in the hackmd), indexed by `j`

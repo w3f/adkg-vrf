@@ -16,12 +16,13 @@
 /// 1. https://hackmd.io/3968Gr5hSSmef-nptg2GRw
 /// 2. https://hackmd.io/xqYBrigYQwyKM_0Sn5Xf4w
 
+/// Aggregatable Publicly Verifiable Secret Sharing Scheme
 pub mod dkg;
-mod signing;
+mod vanilla;
+pub mod threshold;
 mod utils;
 pub mod koe;
 mod agg;
-mod bls;
 
 #[cfg(test)]
 mod tests {
@@ -34,9 +35,9 @@ mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::test_rng;
 
-    use crate::bls::BlsSigner;
+    use crate::vanilla::BlsSigner;
     use crate::dkg::dealer::Ceremony;
-    use crate::signing::ThresholdVk;
+    use crate::threshold::ThresholdVk;
 
     fn _it_works<C: Pairing>() {
         let rng = &mut test_rng();
