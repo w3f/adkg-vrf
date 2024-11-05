@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ec::Group;
@@ -12,9 +11,9 @@ use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::rand::Rng;
 use derivative::Derivative;
 
-use crate::{koe, single_base_msm, StandaloneSig};
+use crate::{koe, single_base_msm};
 use crate::agg::SignatureAggregator;
-use crate::bls::BlsSigner;
+use crate::bls::StandaloneSig;
 use crate::signing::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
@@ -409,6 +408,7 @@ impl<C: Pairing> TranscriptVerifier<C> {
 mod tests {
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::{end_timer, start_timer, test_rng};
+    use crate::bls::BlsSigner;
 
     use crate::signing::ThresholdVk;
 

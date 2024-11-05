@@ -2,17 +2,22 @@ use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
-
-use crate::StandaloneSig;
+use derivative::Derivative;
 
 pub struct BlsSigner<C: Pairing> {
-    pub sk: C::ScalarField,
+    sk: C::ScalarField,
     pub bls_pk_g2: C::G2Affine, //TODO: prepared/proj?
 }
 
+#[derive(Derivative)]
+#[derivative(Clone)]
+pub struct StandaloneSig<C: Pairing> {
+    pub sig: C::G1Affine,
+    pub pk: C::G2Affine,
+}
+
 impl<C: Pairing> BlsSigner<C> {
-    #[cfg(test)]
-    fn new<R: Rng>(g2: C::G2, rng: &mut R) -> Self {
+    pub fn new<R: Rng>(g2: C::G2, rng: &mut R) -> Self {
         let sk = C::ScalarField::rand(rng);
         let bls_pk_g2 = g2 * sk;
         let bls_pk_g2 = bls_pk_g2.into_affine();
@@ -28,3 +33,4 @@ impl<C: Pairing> BlsSigner<C> {
         }
     }
 }
+

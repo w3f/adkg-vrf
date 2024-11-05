@@ -1,9 +1,9 @@
 use ark_ec::Group;
 use ark_ec::pairing::Pairing;
 use derivative::Derivative;
-use crate::{Shares, StandaloneSig};
-use crate::deal::SharesAndMore;
 
+use crate::bls::StandaloneSig;
+use crate::deal::SharesAndMore;
 
 // Used to verify aggregated threshold signatures.
 // `c = f(0).g1` is the public key associated with the dealing.
@@ -25,17 +25,6 @@ pub struct AggThresholdSig<C: Pairing> {
 }
 
 impl<C: Pairing> ThresholdVk<C> {
-
-    pub fn from_share2(share: &Shares<C>) -> Self { //TODO: consume?
-        Self {
-            c: share.c,
-            h1: share.h1,
-            h2: share.h2,
-            g1: C::G1::generator(),
-            g2: C::G2::generator(),
-        }
-    }
-
     pub fn from_share(share: &SharesAndMore<C>) -> Self { //TODO: consume?
         Self {
             c: share.c,
