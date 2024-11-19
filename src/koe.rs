@@ -1,4 +1,5 @@
 use std::iter;
+
 use ark_ec::CurveGroup;
 use ark_ff::One;
 use ark_serialize::CanonicalSerialize;
@@ -95,7 +96,7 @@ impl<G: CurveGroup> Instance<G> {
 
 #[cfg(test)]
 mod tests {
-    use ark_ec::Group;
+    use ark_ec::PrimeGroup;
     use ark_std::{test_rng, UniformRand};
 
     use crate::koe::{Instance, Statement};

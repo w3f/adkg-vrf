@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use ark_ec::pairing::Pairing;
 use ark_poly::EvaluationDomain;
 
-use crate::dkg::dealer::Ceremony;
 use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
+use crate::dkg::dealer::Ceremony;
 
 pub struct SignatureAggregator<C: Pairing> {
     // to verify BLS sigs with the keys in G2

@@ -1,5 +1,5 @@
-use ark_ec::Group;
 use ark_ec::pairing::{Pairing, PairingOutput};
+use ark_ec::PrimeGroup;
 use derivative::Derivative;
 
 use crate::bls::vanilla::StandaloneSig;

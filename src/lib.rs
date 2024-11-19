@@ -29,14 +29,14 @@ mod tests {
     // TODO: test t = n
     // TODO: test multiple dealings
 
-    use ark_ec::{CurveGroup, Group};
+    use ark_ec::{CurveGroup, PrimeGroup};
     use ark_ec::pairing::Pairing;
     use ark_poly::GeneralEvaluationDomain;
     use ark_std::test_rng;
 
+    use crate::bls::threshold::ThresholdVk;
     use crate::bls::vanilla::BlsSigner;
     use crate::dkg::dealer::Ceremony;
-    use crate::bls::threshold::ThresholdVk;
 
     fn _it_works<C: Pairing>() {
         let rng = &mut test_rng();

@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
-use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
-use ark_ec::Group;
+use ark_ec::{AffineRepr, CurveGroup, PrimeGroup, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
-use ark_ec::scalar_mul::fixed_base::FixedBase;
-use ark_ff::{Field, One, PrimeField, Zero};
+use ark_ff::{Field, One, Zero};
 use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_poly::univariate::DensePolynomial;
@@ -13,9 +11,9 @@ use ark_std::rand::Rng;
 use derivative::Derivative;
 
 use crate::agg::SignatureAggregator;
+use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
 use crate::koe;
-use crate::bls::threshold::AggThresholdSig;
 use crate::utils::BarycentricDomain;
 
 // TODO: integration test
@@ -394,11 +392,7 @@ impl<C: Pairing> TranscriptVerifier<C> {
 
 // Multiply the same base by each scalar.
 pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C::Affine> {
-    let window_size = FixedBase::get_mul_window_size(scalars.len());
-    let bits_in_scalar = C::ScalarField::MODULUS_BIT_SIZE.try_into().unwrap();
-    let table = FixedBase::get_window_table(bits_in_scalar, window_size, g);
-    let scalars_in_g = FixedBase::msm(bits_in_scalar, window_size, &table, scalars);
-    C::normalize_batch(&scalars_in_g)
+    g.batch_mul(scalars)
 }
 
 #[cfg(test)]
