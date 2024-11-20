@@ -17,7 +17,6 @@ fn short_msm<C: CurveGroup>(c: &mut Criterion) {
     let bases = C::normalize_batch(&bases);
 
     c.bench_function("Strauss 4-msm", |b| b.iter(|| strauss::short_msm(&bases, &scalars)));
-    c.bench_function("Precomputation", |b| b.iter(|| strauss::table(&bases)));
 }
 
 criterion_group!(benches, short_msm::<ark_bls12_381::G1Projective>);
