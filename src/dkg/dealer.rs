@@ -13,6 +13,7 @@ use derivative::Derivative;
 use crate::agg::SignatureAggregator;
 use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
+use crate::dkg::Ceremony;
 use crate::koe;
 use crate::utils::BarycentricDomain;
 
@@ -28,24 +29,7 @@ use crate::utils::BarycentricDomain;
 // that gives a `t` out of `n` threshold scheme
 // Dealers are indexed by `i`, their number is arbitrary.
 
-/// Parameters of an aPVSS instantiation.
-pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
-    /// The number of signers.
-    pub n: usize,
-    /// The threshold, i.e. the minimal number of signers required to reconstruct the shared secret.
-    pub t: usize,
-    /// The signers' bls public keys in G2.
-    /// **It's critical that proofs of possession are checked for these keys.**
-    pub bls_pks: &'a [C::G2Affine],
-    /// An FFT-friendly multiplicative subgroup of the field of size not less than `n`.
-    /// The evaluation points are the first `n` elements of the subgroup: `x_j = w^j, j = 0,...,n-1`,
-    /// where `w` is the generator of the subgroup.
-    pub domain: D,
-    /// Generator of G1.
-    pub g1: C::G1,
-    /// Generator of G2.
-    pub g2: C::G2,
-}
+
 
 /// Useful data produced by the protocol:
 /// - encrypted shares of the secret key,

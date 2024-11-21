@@ -5,7 +5,7 @@ use ark_poly::EvaluationDomain;
 
 use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
-use crate::dkg::dealer::Ceremony;
+use crate::dkg::Ceremony;
 
 pub struct SignatureAggregator<C: Pairing> {
     // to verify BLS sigs with the keys in G2
