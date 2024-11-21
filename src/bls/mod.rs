@@ -2,4 +2,4 @@
 pub mod threshold;
 
 /// Vanilla BLS signature scheme.
-pub(crate) mod vanilla;
+pub mod vanilla;

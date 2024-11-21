@@ -18,10 +18,10 @@
 
 /// Aggregatable Publicly Verifiable Secret Sharing Scheme
 pub mod dkg;
-mod utils;
+pub mod utils;
 pub mod koe;
 pub mod agg;
-mod bls;
+pub mod bls;
 pub mod straus;
 
 // must have

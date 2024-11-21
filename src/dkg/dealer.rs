@@ -1,6 +1,5 @@
-use ark_ec::{AffineRepr, CurveGroup, PrimeGroup, ScalarMul, VariableBaseMSM};
+use ark_ec::{CurveGroup, ScalarMul};
 use ark_ec::pairing::Pairing;
-use ark_ff::{Field, One, Zero};
 use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_poly::univariate::DensePolynomial;
@@ -12,7 +11,6 @@ use crate::dkg::transcript::{KoeProof, Transcript};
 use crate::koe;
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
-
     //TODO: cryptorng?
     pub fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
         // dealer's secrets
