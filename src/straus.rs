@@ -45,7 +45,8 @@ pub fn short_msm<C: AffineRepr>(bases: &[C], scalars: &[C::ScalarField]) -> C::G
     }
     acc
 }
- fn glv_decomposition<C: GLVConfig>(b: Affine<C>, s: C::ScalarField) -> Vec<(Affine<C>, C::ScalarField)> {
+
+fn glv_decomposition<C: GLVConfig>(b: Affine<C>, s: C::ScalarField) -> Vec<(Affine<C>, C::ScalarField)> {
     let ((sgn_k1, k1), (sgn_k2, k2)) = C::scalar_decomposition(s);
     let mut b1 = b;
     let mut b2 = C::endomorphism_affine(&b);
@@ -66,7 +67,7 @@ pub fn short_msm_glv<C: GLVConfig>(bases: &[Affine<C>], scalars: &[C::ScalarFiel
         .flat_map(|(b, s)| glv_decomposition(*b, *s))
         .unzip();
     end_timer!(_t_glv);
-    let _t_msm = start_timer!(|| format!("Strauss {}-msm", glv_bases.len()));
+    let _t_msm = start_timer!(|| format!("straus {}-msm", glv_bases.len()));
     let res = short_msm(&glv_bases, &glv_scalars);
     end_timer!(_t_msm);
     res
@@ -79,7 +80,7 @@ mod tests {
     use ark_ec::short_weierstrass::{Affine, Projective};
     use ark_std::{end_timer, start_timer, test_rng, UniformRand};
 
-    use crate::strauss::{short_msm, short_msm_glv};
+    use crate::straus::{short_msm, short_msm_glv};
 
     fn _test_short_msm<C: GLVConfig>(n: usize) {
         let rng = &mut test_rng();
@@ -98,9 +99,9 @@ mod tests {
             .sum();
         end_timer!(_t_naive);
 
-        let _t_strauss = start_timer!(|| format!("Strauss {}-msm", n));
+        let _t_straus = start_timer!(|| format!("straus {}-msm", n));
         let res2 = short_msm(&bases, &scalars);
-        end_timer!(_t_strauss);
+        end_timer!(_t_straus);
 
         assert_eq!(res1, res2);
 

@@ -2,7 +2,7 @@ use ark_ec::CurveGroup;
 use ark_std::{test_rng, UniformRand};
 use criterion::{Criterion, criterion_group, criterion_main};
 
-use adkg_vrf::strauss;
+use adkg_vrf::straus;
 
 fn short_msm<C: CurveGroup>(c: &mut Criterion) {
     let rng = &mut test_rng();
@@ -16,7 +16,7 @@ fn short_msm<C: CurveGroup>(c: &mut Criterion) {
         .collect::<Vec<_>>();
     let bases = C::normalize_batch(&bases);
 
-    c.bench_function("Strauss 4-msm", |b| b.iter(|| strauss::short_msm(&bases, &scalars)));
+    c.bench_function("straus 4-msm", |b| b.iter(|| straus::short_msm(&bases, &scalars)));
 }
 
 criterion_group!(benches, short_msm::<ark_bls12_381::G1Projective>);

@@ -22,7 +22,7 @@ mod utils;
 pub mod koe;
 mod agg;
 mod bls;
-pub mod strauss;
+pub mod straus;
 
 #[cfg(test)]
 mod tests {

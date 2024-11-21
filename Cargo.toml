@@ -18,7 +18,7 @@ ark-bls12-381 = { version = "0.5", default-features = false, features = ["curve"
 criterion = "0.5"
 
 [[bench]]
-name = "strauss"
+name = "straus"
 harness = false
 
 [features]
