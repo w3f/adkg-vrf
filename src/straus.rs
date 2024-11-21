@@ -6,6 +6,11 @@ use ark_ec::short_weierstrass::{Affine, Projective};
 use ark_ff::{AdditiveGroup, BigInteger, PrimeField, Zero};
 use ark_std::{end_timer, start_timer};
 
+/// Simplest form of Straus' multi-scalar multiplication.
+/// See the Handbook of Elliptic and Hyperelliptic Curve Cryptography, [Algorithm 9.23](https://hyperelliptic.org/HEHCC/chapters/chap09.pdf)
+
+/// Precomputes sums of all subsets of the list of points.
+// See `Self::bits_to_index` for the order.
 fn table<C: AffineRepr>(bases: &[C]) -> Vec<C> {
     let mut table = vec![C::Group::zero()];
     for b in bases {
@@ -17,8 +22,17 @@ fn table<C: AffineRepr>(bases: &[C]) -> Vec<C> {
     C::Group::normalize_batch(&table)
 }
 
+/// Converts `bits` highlighting a subset of the points to the index in the table where the sum of the subset is located.
+// The powers of `2` start from `1`, so the least significant bit goes first.
+fn bits_to_index<I: Iterator<Item=bool>>(bits: I, powers_of_2: &[u32]) -> usize {
+    bits.zip(powers_of_2.iter())
+        .filter_map(|(bit, power)| bit.then_some(power))
+        .sum::<u32>() as usize
+}
+
+/// Converts a list of scalars into a list of lookup indices.
 fn indices<F: PrimeField>(scalars: &[F]) -> Vec<usize> {
-    let powers_of_2 = iter::successors(Some(1usize), move |prev| Some(prev << 1))
+    let powers_of_2 = iter::successors(Some(1u32), move |prev| Some(prev << 1))
         .take(scalars.len())
         .collect::<Vec<_>>();
 
@@ -27,19 +41,21 @@ fn indices<F: PrimeField>(scalars: &[F]) -> Vec<usize> {
         .collect();
 
     let repr_bit_len = F::BigInt::NUM_LIMBS * 64;
-    (0..repr_bit_len).map(|i| {
-        scalars.iter()
-            .zip(powers_of_2.iter())
-            .filter_map(|(bits, power)| bits[i].then_some(power))
-            .sum()
+    let scalar_bit_len = F::MODULUS_BIT_SIZE as usize;
+    let skip = repr_bit_len - scalar_bit_len;
+    (skip..repr_bit_len).map(|i| {
+        let slice = scalars.iter()
+            .map(|s| s[i]);
+        bits_to_index(slice, &powers_of_2)
     }).collect()
 }
 
 pub fn short_msm<C: AffineRepr>(bases: &[C], scalars: &[C::ScalarField]) -> C::Group {
     let table = table(&bases);
-    let indices = indices(scalars); // TODO: filter trailing zeroes?
+    let indices = indices(scalars);
     let mut acc = C::Group::zero();
-    for idx in indices {
+    for idx in indices.into_iter().skip_while(|&idx| idx == 0)
+    {
         acc.double_in_place();
         acc += table[idx]
     }
