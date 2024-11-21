@@ -1,9 +1,15 @@
-use ark_ec::{CurveGroup, PrimeGroup};
+use std::collections::HashMap;
+
+use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
+use ark_ff::Zero;
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer};
 use derivative::Derivative;
 
+use crate::agg::SignatureAggregator;
+use crate::bls::threshold::AggThresholdSig;
+use crate::bls::vanilla::StandaloneSig;
 use crate::dkg::verifier::TranscriptVerifier;
 use crate::utils::BarycentricDomain;
 
@@ -25,7 +31,7 @@ use crate::utils::BarycentricDomain;
 
 pub mod dealer;
 pub mod verifier;
-mod transcript;
+pub mod transcript;
 
 //TODO: move bls_pks out?
 /// Parameters of an aPVSS instantiation.
@@ -59,6 +65,8 @@ pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
+//TODO: check visibility
+//TODO: better name
 pub struct SharesAndMore<C: Pairing> {
     /// The public key corresponding to the shared secret key.
     /// `c = f(0).g1`
@@ -95,6 +103,43 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         TranscriptVerifier {
             domain_size_n,
             domain_size_t,
+        }
+    }
+
+    // TODO: args are not any more aggregatable
+    pub fn aggregate_augmented_sigs(&self, augmented_sigs: Vec<Option<AggThresholdSig<C>>>) -> AggThresholdSig<C> {
+        assert_eq!(augmented_sigs.len(), self.n);
+        let mut bitmask: Vec<bool> = augmented_sigs.iter().map(|o| o.is_some()).collect();
+        bitmask.resize(self.domain.size(), false);
+        let set_bits_count = bitmask.iter().filter(|b| **b).count();
+        assert!(set_bits_count >= self.t);
+        let lis = BarycentricDomain::from_subset(self.domain, &bitmask)
+            .lagrange_basis_at(C::ScalarField::zero());
+        let augmented_sigs: Vec<AggThresholdSig<C>> = augmented_sigs.into_iter()
+            .flatten()
+            .collect();
+        let bls_sigs: Vec<_> = augmented_sigs.iter().map(|s| s.bls_sig_with_pk.sig).collect();
+        let bls_pks: Vec<_> = augmented_sigs.iter().map(|s| s.bls_sig_with_pk.pk).collect();
+        let bgpks: Vec<_> = augmented_sigs.iter().map(|s| s.bgpk).collect();
+        let asig = C::G1::msm(&bls_sigs, &lis).unwrap().into_affine();
+        let apk = C::G2::msm(&bls_pks, &lis).unwrap().into_affine();
+        let abgpk = C::G2::msm(&bgpks, &lis).unwrap().into_affine();
+        AggThresholdSig {
+            bls_sig_with_pk: StandaloneSig { sig: asig, pk: apk },
+            bgpk: abgpk,
+        }
+    }
+
+    pub fn aggregator(&self, final_share: SharesAndMore<C>) -> SignatureAggregator<C> {
+        let pks: HashMap<_, _> = self.bls_pks.iter()
+            .cloned()
+            .zip(final_share.bgpk)
+            .enumerate()
+            .map(|(j, (bls_pk_j, bgpk_j))| (bls_pk_j, (bgpk_j, j)))
+            .collect();
+        SignatureAggregator {
+            g2: self.g2.into_affine(),
+            pks,
         }
     }
 }

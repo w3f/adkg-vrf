@@ -20,9 +20,27 @@
 pub mod dkg;
 mod utils;
 pub mod koe;
-mod agg;
+pub mod agg;
 mod bls;
 pub mod straus;
+
+// must have
+// TODO: Fiat-Shamir
+// TODO: cofactors/subgroup checks
+// TODO: no-std
+// TODO: return results
+
+// nice to have
+// TODO: CP proofs
+// TODO: integration test
+// TODO: half-aggregation
+// TODO: bench for logn = 16, 20
+
+// nice to consider
+// TODO: IBE
+// TODO: resharing?
+// TODO: backsharing
+// TODO: multiple Cs?
 
 #[cfg(test)]
 mod tests {

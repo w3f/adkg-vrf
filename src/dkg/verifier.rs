@@ -22,7 +22,6 @@ pub struct TranscriptVerifier<C: Pairing> {
 }
 
 impl<C: Pairing> TranscriptVerifier<C> {
-
     // TODO: check params
     pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
@@ -86,5 +85,52 @@ impl<C: Pairing> TranscriptVerifier<C> {
             &[a_term + shares.c * r2 + shares.h1 * r3, -params.g1, shares.h1.into()],
             &[params.g2, bgpk_at_z + shares.h2 * r3, pk_at_z],
         ).is_zero());
+    }
+}
+
+#[cfg(test)]
+impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
+    pub fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+        // 2. h2 has the same dlog as h1
+        assert_eq!(C::pairing(t.shares.h1, self.g2), C::pairing(self.g1, t.shares.h2));
+        // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
+        self.verify_as(&t, rng);
+        // 4. `C = f(0).g1`
+        self.verify_c(&t);
+        // 5. `bgpk`s are well-formed
+        self.verify_bgpks(&t, rng);
+    }
+
+    // Checks that `bgpk_j = f_i(w^j).g2 + sh_i.pk_j, j = 0,...,n-1`.
+    // For that we interpolate 3 degree `< n` polynomials in the exponent:
+    // 1. `bgpk(w^j).g2 = bgpk_j`,
+    // 2. `f(w^j).g1 = A_j`, and
+    // 3. `pk(w^j).g2 = pk_j`.
+    // Then `bgpk(z) = f(z) + sh.pk(z)`, and, as `h1 = sh_i.g1`,
+    // we can check that `e(g1, bgpk(z)) = e(f(z), g2) + e(h1, pk(z))`.
+    fn verify_bgpks<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+        let z = C::ScalarField::rand(rng);
+        let lis_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
+        let f_at_z_g1 = C::G1::msm(&t.a, &lis_at_z).unwrap();
+        let bgpk_at_z_g2 = C::G2::msm(&t.shares.bgpk, &lis_at_z).unwrap();
+        let pk_at_z_g2 = C::G2::msm(&self.bls_pks, &lis_at_z).unwrap();
+        let lhs = C::pairing(self.g1, bgpk_at_z_g2);
+        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(t.shares.h1, pk_at_z_g2);
+        assert_eq!(lhs, rhs);
+    }
+
+    fn verify_as<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+        let z = C::ScalarField::rand(rng);
+        let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
+        let ls_deg_t_at_z = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(z);
+        let f_deg_n_at_z = C::G1::msm(&t.a, &ls_deg_n_at_z);
+        let f_deg_t_at_z = C::G1::msm(&t.a[..self.t], &ls_deg_t_at_z);
+        assert_eq!(f_deg_n_at_z, f_deg_t_at_z);
+    }
+
+    fn verify_c(&self, t: &Transcript<C>) {
+        let ls_at_0 = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(C::ScalarField::zero());
+        let f_at_0 = C::G1::msm(&t.a[..self.t], &ls_at_0).unwrap();
+        assert_eq!(t.shares.c, f_at_0.into_affine());
     }
 }
