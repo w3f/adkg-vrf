@@ -6,7 +6,7 @@ use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::rand::Rng;
 
 use crate::dkg::Ceremony;
-use crate::dkg::dealer::Transcript;
+use crate::dkg::transcript::Transcript;
 use crate::koe;
 use crate::utils::BarycentricDomain;
 

@@ -14,6 +14,7 @@ use crate::agg::SignatureAggregator;
 use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
 use crate::dkg::Ceremony;
+use crate::dkg::transcript::{KoeProof, Transcript};
 use crate::koe;
 use crate::utils::BarycentricDomain;
 
@@ -42,7 +43,7 @@ use crate::utils::BarycentricDomain;
 /// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
 #[derive(Derivative)]
 #[derivative(Clone)]
-pub(crate) struct SharesAndMore<C: Pairing> {
+pub struct SharesAndMore<C: Pairing> {
     /// The public key corresponding to the shared secret key.
     /// `c = f(0).g1`
     pub(crate) c: C::G1Affine,
@@ -55,41 +56,13 @@ pub(crate) struct SharesAndMore<C: Pairing> {
     pub(crate) h2: C::G2Affine,
 }
 
-/// Standalone or aggregated transcript with the witness.
-// TODO: add weights?
-#[derive(Derivative)]
-#[derivative(Clone)]
-pub struct Transcript<C: Pairing> {
-    pub shares: SharesAndMore<C>,
-
-    // witness data
-    /// Commitment to the secret polynomial `A_j = f(w^j).g1, j = 0,...,n-1`
-    pub(crate) a: Vec<C::G1Affine>,
-    /// Proofs of knowledge of the exponents `(f_i(0), sh_i)`
-    /// such that `C_i=f_i(0).g1` and `h1_i=sh_i.g1` for every dealer `i = 1,...,k`.
-    pub(crate) koe_proofs: Vec<KoeProof<C>>,
-}
-
-
-/// Proof that the dealer `i` knows her secrets.
-#[derive(Derivative)]
-#[derivative(Clone)]
-pub(crate) struct KoeProof<C: Pairing> {
-    /// `C_i = f_i(0).g1`
-    pub(crate) c_i: C::G1Affine,
-    /// `h1_i = sh_i.g1`
-    pub(crate) h1_i: C::G1Affine,
-    /// `s_i` is a proof of knowledge of the discrete logs of `(C_i, h1_i)` with respect to `g1`.
-    pub(crate) koe_proof: koe::Proof<C::G1>,
-}
-
 impl<C: Pairing> SharesAndMore<C> {
-    fn merge_with(self, mut others: Vec<Self>) -> Self {
+    pub fn merge_with(self, mut others: Vec<Self>) -> Self {
         others.push(self);
         Self::merge(&others)
     }
 
-    fn merge(keys: &[Self]) -> Self {
+    pub fn merge(keys: &[Self]) -> Self {
         let n = keys[0].bgpk.len();
         Self {
             c: (keys.iter().map(|key| key.c).sum::<C::G1>()).into_affine(),
@@ -102,38 +75,6 @@ impl<C: Pairing> SharesAndMore<C> {
             }).collect(),
             h1: keys.iter().map(|key| key.h1).sum::<C::G1>().into_affine(),
             h2: keys.iter().map(|key| key.h2).sum::<C::G2>().into_affine(),
-        }
-    }
-}
-
-impl<C: Pairing> Transcript<C> {
-    pub fn merge_with(self, others: &[Self]) -> Self {
-        let mut others = others.to_vec();
-        others.push(self);
-        Self::merge(&others)
-    }
-
-    fn merge(transcripts: &[Self]) -> Self {
-        let n = transcripts[0].a.len();
-        let a = (0..n).map(|j| {
-            transcripts.iter()
-                .map(|t| t.a[j])
-                .sum::<C::G1>().into_affine()
-        }).collect();
-
-        let shares = transcripts.iter()
-            .map(|t| t.shares.clone())
-            .collect::<Vec<_>>();
-        let shares = SharesAndMore::merge(&shares);
-
-        let koe_proofs = transcripts.iter()
-            .flat_map(|t| t.koe_proofs.clone())
-            .collect::<Vec<_>>();
-
-        Self {
-            shares,
-            a,
-            koe_proofs,
         }
     }
 }
