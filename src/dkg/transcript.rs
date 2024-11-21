@@ -2,7 +2,7 @@ use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
 use derivative::Derivative;
 
-use crate::dkg::dealer::SharesAndMore;
+use crate::dkg::SharesAndMore;
 use crate::koe;
 
 /// Standalone or aggregated transcript with the witness.

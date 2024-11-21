@@ -22,6 +22,8 @@ pub struct TranscriptVerifier<C: Pairing> {
 }
 
 impl<C: Pairing> TranscriptVerifier<C> {
+
+    // TODO: check params
     pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
         let koes = t.koe_proofs.iter()

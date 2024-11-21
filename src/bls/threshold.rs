@@ -3,7 +3,7 @@ use ark_ec::PrimeGroup;
 use derivative::Derivative;
 
 use crate::bls::vanilla::StandaloneSig;
-use crate::dkg::dealer::SharesAndMore;
+use crate::dkg::SharesAndMore;
 
 // Used to verify aggregated threshold signatures.
 // `c = f(0).g1` is the public key associated with the dealing.
