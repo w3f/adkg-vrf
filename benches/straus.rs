@@ -13,16 +13,16 @@ fn short_msm<C: CurveGroup>(c: &mut Criterion) {
 
     let full_scalars = (0..m).map(|_| C::ScalarField::rand(rng)).collect::<Vec<_>>();
     let small_scalars = (0..m).map(|_| C::ScalarField::from(u128::rand(rng))).collect::<Vec<_>>();
-    let bases = (0..m).map(|_| C::rand(rng)).collect::<Vec<_>>();
-    let bases = C::normalize_batch(&bases);
+    let points = (0..m).map(|_| C::rand(rng)).collect::<Vec<_>>();
+    let points = C::normalize_batch(&points);
 
     let mut i = 0;
     c.bench_with_input(BenchmarkId::new("Straus full scalar MSM", n), &n, |b, n| b.iter_batched(
         || {
             i = (i + 1) % (m - n);
-            (&bases[i..i + n], &full_scalars[i..i + n])
+            (&points[i..i + n], &full_scalars[i..i + n])
         },
-        |(bases, scalars)| straus::short_msm(bases, scalars),
+        |(points, scalars)| straus::short_msm(points, scalars),
         BatchSize::SmallInput,
     ));
 
@@ -30,29 +30,29 @@ fn short_msm<C: CurveGroup>(c: &mut Criterion) {
     c.bench_with_input(BenchmarkId::new("Straus 128-bit scalar MSM", n), &n, |b, n| b.iter_batched(
         || {
             i = (i + 1) % (m - n);
-            (&bases[i..i + n], &small_scalars[i..i + n])
+            (&points[i..i + n], &small_scalars[i..i + n])
         },
-        |(bases, scalars)| straus::short_msm(bases, scalars),
+        |(points, scalars)| straus::short_msm(points, scalars),
         BatchSize::SmallInput,
     ));
 }
 
 fn glv_vs_straus<C: GLVConfig>(c: &mut Criterion) {
     let rng = &mut test_rng();
-    let mut bg = c.benchmark_group("small-multiexp-vs-msm");
+    let mut bg = c.benchmark_group("Small MSMs");
 
     let m = 100; // pre-generated input size
     let full_scalars = (0..m).map(|_| C::ScalarField::rand(rng)).collect::<Vec<_>>();
-    let bases = (0..m).map(|_| Affine::<C>::rand(rng)).collect::<Vec<_>>();
+    let points = (0..m).map(|_| Affine::<C>::rand(rng)).collect::<Vec<_>>();
 
     for n in [2, 4] {
         let mut i = 0;
         bg.bench_with_input(BenchmarkId::new("Straus full scalar MSM", n), &n, |b, n| b.iter_batched(
             || {
                 i = (i + 1) % (m - n);
-                (&bases[i..i + n], &full_scalars[i..i + n])
+                (&points[i..i + n], &full_scalars[i..i + n])
             },
-            |(bases, scalars)| straus::short_msm(bases, scalars),
+            |(points, scalars)| straus::short_msm(points, scalars),
             BatchSize::SmallInput,
         ));
 
@@ -60,9 +60,9 @@ fn glv_vs_straus<C: GLVConfig>(c: &mut Criterion) {
         bg.bench_with_input(BenchmarkId::new("GLV-Straus MSM", n), &n, |b, n| b.iter_batched(
             || {
                 i = (i + 1) % (m - n);
-                (&bases[i..i + n], &full_scalars[i..i + n])
+                (&points[i..i + n], &full_scalars[i..i + n])
             },
-            |(bases, scalars)| straus::short_msm_glv(bases, scalars),
+            |(points, scalars)| straus::short_msm_glv(points, scalars),
             BatchSize::SmallInput,
         ));
     }
