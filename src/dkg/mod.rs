@@ -1,4 +1,5 @@
 use ark_ec::pairing::Pairing;
+use ark_ec::PrimeGroup;
 use ark_poly::EvaluationDomain;
 
 /// Aggregatable Publicly Verifiable Secret Sharing scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
@@ -35,4 +36,20 @@ pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     pub g1: C::G1,
     /// Generator of G2.
     pub g2: C::G2,
+}
+
+impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
+    pub fn setup(t: usize, bls_pks: &'a [C::G2Affine]) -> Self {
+        let n = bls_pks.len();
+        assert!(t <= n);
+        //todo: test t = 1, t = n
+        Self {
+            n,
+            t,
+            bls_pks,
+            domain: D::new(n).unwrap(),
+            g1: C::G1::generator(),
+            g2: C::G2::generator(),
+        }
+    }
 }

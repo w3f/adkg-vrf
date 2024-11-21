@@ -150,19 +150,6 @@ impl<C: Pairing> Transcript<C> {
 }
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
-    pub fn setup(t: usize, bls_pks: &'a [C::G2Affine]) -> Self {
-        let n = bls_pks.len();
-        assert!(t <= n);
-        //todo: test t = 1, t = n
-        Self {
-            n,
-            t,
-            bls_pks,
-            domain: D::new(n).unwrap(),
-            g1: C::G1::generator(),
-            g2: C::G2::generator(),
-        }
-    }
 
     pub fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
         // dealer's secrets

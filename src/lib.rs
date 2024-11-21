@@ -37,7 +37,7 @@ mod tests {
 
     use crate::bls::threshold::ThresholdVk;
     use crate::bls::vanilla::BlsSigner;
-    use crate::dkg::dealer::Ceremony;
+    use crate::dkg::Ceremony;
 
     fn _it_works<C: Pairing>() {
         let rng = &mut test_rng();
