@@ -30,7 +30,6 @@ use crate::utils::BarycentricDomain;
 // Dealers are indexed by `i`, their number is arbitrary.
 
 
-
 /// Useful data produced by the protocol:
 /// - encrypted shares of the secret key,
 /// - the corresponding threshold public key, and
@@ -49,7 +48,7 @@ pub(crate) struct SharesAndMore<C: Pairing> {
     pub(crate) c: C::G1Affine,
     /// Shares of the secret, encrypted to the signers.
     /// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`
-    bgpk: Vec<C::G2Affine>,
+    pub bgpk: Vec<C::G2Affine>,
     /// `h1 = sh.g1`
     pub(crate) h1: C::G1Affine,
     /// `h2 = sh.g2`
@@ -65,33 +64,23 @@ pub struct Transcript<C: Pairing> {
 
     // witness data
     /// Commitment to the secret polynomial `A_j = f(w^j).g1, j = 0,...,n-1`
-    a: Vec<C::G1Affine>,
+    pub(crate) a: Vec<C::G1Affine>,
     /// Proofs of knowledge of the exponents `(f_i(0), sh_i)`
     /// such that `C_i=f_i(0).g1` and `h1_i=sh_i.g1` for every dealer `i = 1,...,k`.
-    koe_proofs: Vec<KoeProof<C>>,
+    pub(crate) koe_proofs: Vec<KoeProof<C>>,
 }
 
-/// Precomputed barycentric weights to facilitate interpolation.
-/// Depend only on `(t,n)` so can be reused between the ceremonies.
-/// `Ceremony::verifier()` creates the object.
-/// TODO: 1. can be computed faster
-/// TODO: 2. can keep lis_at_0
-/// TODO: 3. lis_at_0 can be computed faster
-pub struct TranscriptVerifier<C: Pairing> {
-    domain_size_n: BarycentricDomain<C::ScalarField>,
-    domain_size_t: BarycentricDomain<C::ScalarField>,
-}
 
 /// Proof that the dealer `i` knows her secrets.
 #[derive(Derivative)]
 #[derivative(Clone)]
-struct KoeProof<C: Pairing> {
+pub(crate) struct KoeProof<C: Pairing> {
     /// `C_i = f_i(0).g1`
-    c_i: C::G1Affine,
+    pub(crate) c_i: C::G1Affine,
     /// `h1_i = sh_i.g1`
-    h1_i: C::G1Affine,
+    pub(crate) h1_i: C::G1Affine,
     /// `s_i` is a proof of knowledge of the discrete logs of `(C_i, h1_i)` with respect to `g1`.
-    koe_proof: koe::Proof<C::G1>,
+    pub(crate) koe_proof: koe::Proof<C::G1>,
 }
 
 impl<C: Pairing> SharesAndMore<C> {
@@ -150,7 +139,6 @@ impl<C: Pairing> Transcript<C> {
 }
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
-
     pub fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
         // dealer's secrets
         let (f_mon, sh) = (DensePolynomial::rand(self.t - 1, rng), C::ScalarField::rand(rng));
@@ -221,16 +209,6 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    pub fn verifier(&self) -> TranscriptVerifier<C> {
-        let _t = start_timer!(|| "Interpolation");
-        let domain_size_n = BarycentricDomain::of_size(self.domain, self.n);
-        let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
-        end_timer!(_t);
-        TranscriptVerifier {
-            domain_size_n,
-            domain_size_t,
-        }
-    }
 
     pub fn aggregator(&self, final_share: SharesAndMore<C>) -> SignatureAggregator<C> {
         let pks: HashMap<_, _> = self.bls_pks.iter()
@@ -294,72 +272,6 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 }
 
-
-impl<C: Pairing> TranscriptVerifier<C> {
-    pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
-        // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
-        let koes = t.koe_proofs.iter()
-            .map(|w| {
-                let x = koe::Instance {
-                    base: params.g1,
-                    points: vec![w.c_i.into_group(), w.h1_i.into_group()],
-                };
-                (x, w.koe_proof.clone())
-            })
-            .collect::<Vec<_>>();
-        koe::Instance::batch_verify(&koes, rng);
-
-        let sum_c = t.koe_proofs.iter()
-            .map(|w| w.c_i)
-            .sum::<C::G1>()
-            .into_affine();
-
-        let sum_h1 = t.koe_proofs.iter()
-            .map(|w| w.h1_i)
-            .sum::<C::G1>()
-            .into_affine();
-
-        let shares = &t.shares;
-        assert_eq!(shares.c, sum_c);
-        assert_eq!(shares.h1, sum_h1);
-
-        // Merges the equations from `Self::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
-        // TODO: Fiat-Shamir
-        let (r1, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
-        let r2 = r1.square();
-        let r3 = r2 * r1;
-
-        let _t = start_timer!(|| "Interpolation");
-        let lis_size_n_at_z = self.domain_size_n.lagrange_basis_at(z);
-        let (lis_size_t_at_z, lis_size_t_at_0) = {
-            let mut lis_size_t_at_z = self.domain_size_t.lagrange_basis_at(z);
-            let mut lis_size_t_at_0 = self.domain_size_t.lagrange_basis_at(C::ScalarField::zero());
-            lis_size_t_at_z.resize(params.n, C::ScalarField::zero());
-            lis_size_t_at_0.resize(params.n, C::ScalarField::zero());
-            (lis_size_t_at_z, lis_size_t_at_0)
-        };
-        end_timer!(_t);
-
-        let a_coeffs: Vec<_> = lis_size_n_at_z.iter()
-            .zip(lis_size_t_at_z)
-            .zip(lis_size_t_at_0)
-            .map(|((li_n_z, li_t_z), li_t_0)| {
-                (C::ScalarField::one() - r1) * li_n_z + r1 * li_t_z - r2 * li_t_0
-            })
-            .collect();
-
-        let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
-        let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
-        let bgpk_at_z = C::G2::msm(&shares.bgpk, &lis_size_n_at_z).unwrap();
-        let pk_at_z = C::G2::msm(&params.bls_pks, &lis_size_n_at_z).unwrap();
-        end_timer!(_t);
-
-        assert!(C::multi_pairing(
-            &[a_term + shares.c * r2 + shares.h1 * r3, -params.g1, shares.h1.into()],
-            &[params.g2, bgpk_at_z + shares.h2 * r3, pk_at_z],
-        ).is_zero());
-    }
-}
 
 // Multiply the same base by each scalar.
 pub fn single_base_msm<C: CurveGroup>(scalars: &[C::ScalarField], g: C) -> Vec<C::Affine> {

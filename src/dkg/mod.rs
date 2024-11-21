@@ -1,6 +1,10 @@
 use ark_ec::pairing::Pairing;
 use ark_ec::PrimeGroup;
 use ark_poly::EvaluationDomain;
+use ark_std::{end_timer, start_timer};
+
+use crate::dkg::verifier::TranscriptVerifier;
+use crate::utils::BarycentricDomain;
 
 /// Aggregatable Publicly Verifiable Secret Sharing scheme (aPVSS) for sharing a secret key `f(0).g1` in G1,
 /// corresponding to the public key `f(0).g2` in G2.
@@ -18,6 +22,7 @@ use ark_poly::EvaluationDomain;
 /// Instead, anyone can blindly use the ciphertexts to produce proofs that the threshold number of signers have signed.
 
 pub mod dealer;
+pub mod verifier;
 
 /// Parameters of an aPVSS instantiation.
 pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
@@ -50,6 +55,17 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
             domain: D::new(n).unwrap(),
             g1: C::G1::generator(),
             g2: C::G2::generator(),
+        }
+    }
+
+    pub fn verifier(&self) -> TranscriptVerifier<C> {
+        let _t = start_timer!(|| "Interpolation");
+        let domain_size_n = BarycentricDomain::of_size(self.domain, self.n);
+        let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
+        end_timer!(_t);
+        TranscriptVerifier {
+            domain_size_n,
+            domain_size_t,
         }
     }
 }
