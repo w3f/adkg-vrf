@@ -11,6 +11,7 @@ ark-ec = { version = "0.5", default-features = false }
 ark-poly = { version = "0.5", default-features = false }
 ark-serialize = { version = "0.5", default-features = false, features = ["derive"] }
 ark-transcript = { git = "https://github.com/w3f/ark-transcript" }
+hashbrown = "0.15"
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.5", default-features = false, features = ["curve"] }

@@ -4,6 +4,7 @@ use ark_ff::Zero;
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer};
 use ark_std::vec::Vec;
+use hashbrown::HashMap;
 
 use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
@@ -126,9 +127,8 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    #[cfg(feature = "std")]
     pub fn aggregator(&self, final_share: SharesAndMore<C>) -> crate::agg::SignatureAggregator<C> {
-        let pks: std::collections::HashMap<_, _> = self.bls_pks.iter()
+        let pks: HashMap<_, _> = self.bls_pks.iter()
             .cloned()
             .zip(final_share.bgpk)
             .enumerate()
