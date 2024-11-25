@@ -2,6 +2,7 @@ use ark_ff::{FftField, Field};
 use ark_poly::{DenseUVPolynomial, EvaluationDomain};
 use ark_poly::univariate::DensePolynomial;
 use ark_std::{end_timer, iter, start_timer};
+use ark_std::{vec, vec::Vec};
 
 /// Utilities for Lagrange interpolation over a subset of an FFT domain.
 
@@ -153,7 +154,7 @@ mod tests {
     use ark_ec::CurveGroup;
     use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
     use ark_poly::univariate::DensePolynomial;
-    use ark_std::{end_timer, start_timer, test_rng};
+    use ark_std::{end_timer, format, start_timer, test_rng};
     use ark_std::rand::Rng;
     use ark_std::UniformRand;
 

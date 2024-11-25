@@ -3,6 +3,7 @@ use ark_ec::pairing::Pairing;
 use ark_ff::{Field, One, Zero};
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer, UniformRand};
+use ark_std::{vec, vec::Vec};
 use ark_std::rand::Rng;
 
 use crate::dkg::Ceremony;

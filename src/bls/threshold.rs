@@ -1,6 +1,5 @@
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::PrimeGroup;
-use derivative::Derivative;
 
 use crate::bls::vanilla::StandaloneSig;
 use crate::dkg::SharesAndMore;
@@ -17,8 +16,7 @@ pub struct ThresholdVk<C: Pairing> {
     g2: C::G2,
 }
 
-#[derive(Derivative)]
-#[derivative(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AggThresholdSig<C: Pairing> {
     pub(crate) bls_sig_with_pk: StandaloneSig<C>,
     pub(crate) bgpk: C::G2Affine,

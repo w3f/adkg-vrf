@@ -1,13 +1,13 @@
-use std::iter;
-
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ec::scalar_mul::glv::GLVConfig;
 use ark_ec::short_weierstrass::{Affine, Projective};
 use ark_ff::{AdditiveGroup, BigInteger, PrimeField, Zero};
-use ark_std::{end_timer, start_timer};
+use ark_std::{end_timer, format, start_timer};
+use ark_std::{iter, vec, vec::Vec};
 
 /// Simplest form of Straus' multi-scalar multiplication.
-/// See the Handbook of Elliptic and Hyperelliptic Curve Cryptography, [Algorithm 9.23](https://hyperelliptic.org/HEHCC/chapters/chap09.pdf)
+/// See the Handbook of Elliptic and Hyperelliptic Curve Cryptography,
+/// [Algorithm 9.23](https://hyperelliptic.org/HEHCC/chapters/chap09.pdf).
 
 /// Precomputes sums of all subsets of the list of `points`.
 // The ordering is as in `Self::bits_to_index`.
@@ -22,15 +22,16 @@ fn table<C: AffineRepr>(points: &[C]) -> Vec<C> {
     C::Group::normalize_batch(&table)
 }
 
-/// Converts `bits` highlighting a subset of the points to the index in the table where the sum of the subset is located.
-// The powers of `2` start from `1`, so the least significant bit goes first.
+/// Converts `bits` highlighting a subset of the points to the index at which the sum of the subset is located in the table.
+// The powers of `2` should start from `1`, so the least significant bit goes first.
 fn bits_to_index<I: Iterator<Item=bool>>(bits: I, powers_of_2: &[u32]) -> usize {
     bits.zip(powers_of_2.iter())
         .filter_map(|(bit, power)| bit.then_some(power))
         .sum::<u32>() as usize
 }
 
-/// Converts a list of scalars into a list of lookup indices.
+/// Converts a list of scalars into a list of length `l` of lookup indices,
+/// where `l` is the bitness of the scalar field.
 fn indices<F: PrimeField>(scalars: &[F]) -> Vec<usize> {
     let powers_of_2 = iter::successors(Some(1u32), move |prev| Some(prev << 1))
         .take(scalars.len())
@@ -128,7 +129,6 @@ mod tests {
     #[test]
     fn test_short_msm() {
         _test_short_msm::<ark_bls12_381::g1::Config>(2);
-        println!();
         _test_short_msm::<ark_bls12_381::g1::Config>(5);
     }
 }

@@ -4,6 +4,7 @@ use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
 use ark_poly::univariate::DensePolynomial;
 use ark_std::{end_timer, start_timer, UniformRand};
+use ark_std::{vec, vec::Vec};
 use ark_std::rand::Rng;
 
 use crate::dkg::{Ceremony, SharesAndMore};
@@ -62,9 +63,8 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
 
 #[cfg(test)]
 mod tests {
-    use ark_ec::scalar_mul::BatchMulPreprocessing;
     use ark_poly::GeneralEvaluationDomain;
-    use ark_std::{end_timer, start_timer, test_rng};
+    use ark_std::{end_timer, format, start_timer, test_rng};
 
     use super::*;
 
@@ -101,6 +101,7 @@ mod tests {
         end_timer!(_t);
     }
 
+    #[cfg(all(not(debug_assertions), feature = "print-trace"))]
     fn _bench_batch_mul<C: CurveGroup>(log_n: u32) {
         let rng = &mut test_rng();
 
@@ -112,10 +113,10 @@ mod tests {
         let _t = start_timer!(|| format!("Batch multiplication, log(n) = {}", log_n));
 
         let _t_table = start_timer!(|| "Precomputation");
-        let table = BatchMulPreprocessing::new(g, scalars.len());
+        let table = ark_ec::scalar_mul::BatchMulPreprocessing::new(g, scalars.len());
         end_timer!(_t_table);
 
-        println!("Table size = {}x{} affine points", table.table.len(), table.table[0].len());
+        ark_std::println!("Table size = {}x{} affine points", table.table.len(), table.table[0].len());
 
         let _t_mul = start_timer!(|| "Multiplication");
         C::batch_mul_with_preprocessing(&table, &scalars);
@@ -128,9 +129,9 @@ mod tests {
     #[ignore]
     #[cfg(all(not(debug_assertions), feature = "print-trace"))]
     fn bench_batch_mul() {
-        println!("G1:");
+        ark_std::println!("G1:");
         _bench_batch_mul::<ark_bls12_381::G1Projective>(10);
-        println!("G2:");
+        ark_std::println!("G2:");
         _bench_batch_mul::<ark_bls12_381::G2Projective>(10);
     }
 

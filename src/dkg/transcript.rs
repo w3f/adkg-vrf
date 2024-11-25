@@ -1,14 +1,13 @@
 use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
-use derivative::Derivative;
+use ark_std::vec::Vec;
 
 use crate::dkg::SharesAndMore;
 use crate::koe;
 
 /// Standalone or aggregated transcript with the witness.
 // TODO: add weights?
-#[derive(Derivative)]
-#[derivative(Clone)]
+#[derive(Clone)]
 pub struct Transcript<C: Pairing> {
     pub shares: SharesAndMore<C>,
 
@@ -21,8 +20,7 @@ pub struct Transcript<C: Pairing> {
 }
 
 /// Proof that the dealer `i` knows her secrets.
-#[derive(Derivative)]
-#[derivative(Clone)]
+#[derive(Clone)]
 pub(crate) struct KoeProof<C: Pairing> {
     /// `C_i = f_i(0).g1`
     pub(crate) c_i: C::G1Affine,
