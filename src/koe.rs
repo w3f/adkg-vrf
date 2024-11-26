@@ -1,9 +1,9 @@
 use ark_ec::CurveGroup;
 use ark_ff::One;
-use ark_serialize::CanonicalSerialize;
-use ark_std::{iter, vec, vec::Vec};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
+use ark_std::{iter, vec, vec::Vec};
 
 use crate::utils::powers;
 
@@ -20,7 +20,7 @@ pub struct Statement<G: CurveGroup> {
     pub dlogs: Vec<G::ScalarField>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalDeserialize, CanonicalSerialize)]
 pub struct Proof<G: CurveGroup> {
     r: G,
     s: G::ScalarField,
@@ -94,8 +94,8 @@ impl<G: CurveGroup> Instance<G> {
 #[cfg(test)]
 mod tests {
     use ark_ec::PrimeGroup;
-    use ark_std::{test_rng, UniformRand};
     use ark_std::vec::Vec;
+    use ark_std::{test_rng, UniformRand};
 
     use crate::koe::{Instance, Statement};
 

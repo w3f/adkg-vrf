@@ -2,6 +2,7 @@ use ark_ec::pairing::Pairing;
 use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
 use ark_ff::Zero;
 use ark_poly::EvaluationDomain;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
 use ark_std::{end_timer, start_timer};
 use hashbrown::HashMap;
@@ -63,7 +64,7 @@ pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 /// `(h1, h2)` are points in G1xG2 with the same discrete logarithm, i.e. `h1 = sh.g1` and `h2 = sh.g2` for some `sh`.
 /// `bgpk_j = f(w^j).g2 + sh.pk_j, j = 0,...,n-1`.
 /// Then `(bgpk_j, h2)` is the ElGamal encryption of the point `f(w^j).g2` with `pk_j` for the ephemeral secret `sh`.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalDeserialize, CanonicalSerialize)]
 //TODO: check visibility
 //TODO: better name
 pub struct DkgResult<C: Pairing> {

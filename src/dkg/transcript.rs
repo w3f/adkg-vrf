@@ -1,5 +1,6 @@
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
 
 use crate::dkg::DkgResult;
@@ -7,7 +8,7 @@ use crate::koe;
 
 /// Standalone or aggregated transcript with the witness.
 // TODO: add weights?
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalDeserialize, CanonicalSerialize)]
 pub struct DkgTranscript<C: Pairing> {
     pub payload: DkgResult<C>,
 
@@ -20,7 +21,7 @@ pub struct DkgTranscript<C: Pairing> {
 }
 
 /// Proof that the dealer `i` knows her secrets.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalDeserialize, CanonicalSerialize)]
 pub(crate) struct KoeProof<C: Pairing> {
     /// `C_i = f_i(0).g1`
     pub(crate) c_i: C::G1Affine,
