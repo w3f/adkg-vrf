@@ -1,13 +1,13 @@
-use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
+use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, One, Zero};
 use ark_poly::EvaluationDomain;
+use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::{vec, vec::Vec};
-use ark_std::rand::Rng;
 
+use crate::dkg::transcript::DkgTranscript;
 use crate::dkg::Ceremony;
-use crate::dkg::transcript::Transcript;
 use crate::koe;
 use crate::utils::BarycentricDomain;
 
@@ -24,7 +24,7 @@ pub struct TranscriptVerifier<C: Pairing> {
 
 impl<C: Pairing> TranscriptVerifier<C> {
     // TODO: check params
-    pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &Transcript<C>, rng: &mut R) {
+    pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &DkgTranscript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
         let koes = t.koe_proofs.iter()
             .map(|w| {
@@ -47,7 +47,7 @@ impl<C: Pairing> TranscriptVerifier<C> {
             .sum::<C::G1>()
             .into_affine();
 
-        let shares = &t.shares;
+        let shares = &t.payload;
         assert_eq!(shares.c, sum_c);
         assert_eq!(shares.h1, sum_h1);
 
@@ -91,9 +91,9 @@ impl<C: Pairing> TranscriptVerifier<C> {
 
 #[cfg(test)]
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
-    pub fn verify_transcript_unoptimized<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+    pub fn verify_transcript_unoptimized<R: Rng>(&self, t: &DkgTranscript<C>, rng: &mut R) {
         // 2. h2 has the same dlog as h1
-        assert_eq!(C::pairing(t.shares.h1, self.g2), C::pairing(self.g1, t.shares.h2));
+        assert_eq!(C::pairing(t.payload.h1, self.g2), C::pairing(self.g1, t.payload.h2));
         // 3. `A`s are the evaluations of a degree `t` polynomial in the exponent
         self.verify_as(&t, rng);
         // 4. `C = f(0).g1`
@@ -109,18 +109,18 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     // 3. `pk(w^j).g2 = pk_j`.
     // Then `bgpk(z) = f(z) + sh.pk(z)`, and, as `h1 = sh_i.g1`,
     // we can check that `e(g1, bgpk(z)) = e(f(z), g2) + e(h1, pk(z))`.
-    fn verify_bgpks<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+    fn verify_bgpks<R: Rng>(&self, t: &DkgTranscript<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let lis_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let f_at_z_g1 = C::G1::msm(&t.a, &lis_at_z).unwrap();
-        let bgpk_at_z_g2 = C::G2::msm(&t.shares.bgpk, &lis_at_z).unwrap();
+        let bgpk_at_z_g2 = C::G2::msm(&t.payload.bgpk, &lis_at_z).unwrap();
         let pk_at_z_g2 = C::G2::msm(&self.bls_pks, &lis_at_z).unwrap();
         let lhs = C::pairing(self.g1, bgpk_at_z_g2);
-        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(t.shares.h1, pk_at_z_g2);
+        let rhs = C::pairing(f_at_z_g1, self.g2) + C::pairing(t.payload.h1, pk_at_z_g2);
         assert_eq!(lhs, rhs);
     }
 
-    fn verify_as<R: Rng>(&self, t: &Transcript<C>, rng: &mut R) {
+    fn verify_as<R: Rng>(&self, t: &DkgTranscript<C>, rng: &mut R) {
         let z = C::ScalarField::rand(rng);
         let ls_deg_n_at_z = BarycentricDomain::of_size(self.domain, self.n).lagrange_basis_at(z);
         let ls_deg_t_at_z = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(z);
@@ -129,9 +129,9 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         assert_eq!(f_deg_n_at_z, f_deg_t_at_z);
     }
 
-    fn verify_c(&self, t: &Transcript<C>) {
+    fn verify_c(&self, t: &DkgTranscript<C>) {
         let ls_at_0 = BarycentricDomain::of_size(self.domain, self.t).lagrange_basis_at(C::ScalarField::zero());
         let f_at_0 = C::G1::msm(&t.a[..self.t], &ls_at_0).unwrap();
-        assert_eq!(t.shares.c, f_at_0.into_affine());
+        assert_eq!(t.payload.c, f_at_0.into_affine());
     }
 }

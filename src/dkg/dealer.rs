@@ -1,19 +1,19 @@
-use ark_ec::{CurveGroup, ScalarMul};
 use ark_ec::pairing::Pairing;
+use ark_ec::{CurveGroup, ScalarMul};
+use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::EvaluationDomain;
-use ark_poly::univariate::DensePolynomial;
+use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::{vec, vec::Vec};
-use ark_std::rand::Rng;
 
-use crate::dkg::{Ceremony, SharesAndMore};
-use crate::dkg::transcript::{KoeProof, Transcript};
+use crate::dkg::transcript::{DkgTranscript, KoeProof};
+use crate::dkg::{Ceremony, DkgResult};
 use crate::koe;
 
 impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     //TODO: cryptorng?
-    pub fn deal<R: Rng>(&self, rng: &mut R) -> Transcript<C> {
+    pub fn deal<R: Rng>(&self, rng: &mut R) -> DkgTranscript<C> {
         // dealer's secrets
         let (f_mon, sh) = (DensePolynomial::rand(self.t - 1, rng), C::ScalarField::rand(rng));
         let ssk = f_mon[0];
@@ -51,10 +51,10 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         let c = c.into_affine();
         let h1 = h1.into_affine();
         let h2 = h2.into_affine();
-        let shares = SharesAndMore { bgpk, h1, h2, c };
+        let payload = DkgResult { bgpk, h1, h2, c };
         let koe_proof = KoeProof { c_i: c, h1_i: h1, koe_proof };
-        Transcript {
-            shares,
+        DkgTranscript {
+            payload,
             a: f_lag_g1,
             koe_proofs: vec![koe_proof],
         }
@@ -93,7 +93,7 @@ mod tests {
 
         let transcripts = vec![transcript; k];
         let _t = start_timer!(|| format!("Merging {} transcripts", k));
-        let agg_transcript = Transcript::merge(&transcripts);
+        let agg_transcript = DkgTranscript::merge(&transcripts);
         end_timer!(_t);
 
         let _t = start_timer!(|| format!("Aggregate transcript validation, k = {}", k));

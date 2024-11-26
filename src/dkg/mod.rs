@@ -1,9 +1,9 @@
-use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
 use ark_ec::pairing::Pairing;
+use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
 use ark_ff::Zero;
 use ark_poly::EvaluationDomain;
-use ark_std::{end_timer, start_timer};
 use ark_std::vec::Vec;
+use ark_std::{end_timer, start_timer};
 use hashbrown::HashMap;
 
 use crate::bls::threshold::AggThresholdSig;
@@ -30,6 +30,8 @@ use crate::utils::BarycentricDomain;
 pub mod dealer;
 pub mod verifier;
 pub mod transcript;
+
+pub use transcript::*;
 
 //TODO: move bls_pks out?
 /// Parameters of an aPVSS instantiation.
@@ -64,7 +66,7 @@ pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
 #[derive(Clone)]
 //TODO: check visibility
 //TODO: better name
-pub struct SharesAndMore<C: Pairing> {
+pub struct DkgResult<C: Pairing> {
     /// The public key corresponding to the shared secret key.
     /// `c = f(0).g1`
     pub(crate) c: C::G1Affine,
@@ -127,7 +129,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
         }
     }
 
-    pub fn aggregator(&self, final_share: SharesAndMore<C>) -> crate::agg::SignatureAggregator<C> {
+    pub fn aggregator(&self, final_share: DkgResult<C>) -> crate::agg::SignatureAggregator<C> {
         let pks: HashMap<_, _> = self.bls_pks.iter()
             .cloned()
             .zip(final_share.bgpk)
@@ -141,7 +143,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 }
 
-impl<C: Pairing> SharesAndMore<C> {
+impl<C: Pairing> DkgResult<C> {
     pub fn merge_with(self, mut others: Vec<Self>) -> Self {
         others.push(self);
         Self::merge(&others)

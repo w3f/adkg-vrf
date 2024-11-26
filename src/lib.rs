@@ -49,11 +49,11 @@ pub mod straus;
 
 #[cfg(test)]
 mod tests {
-    use ark_ec::{CurveGroup, PrimeGroup};
     use ark_ec::pairing::Pairing;
+    use ark_ec::{CurveGroup, PrimeGroup};
     use ark_poly::GeneralEvaluationDomain;
-    use ark_std::{vec, vec::Vec};
     use ark_std::test_rng;
+    use ark_std::{vec, vec::Vec};
 
     use crate::bls::threshold::ThresholdVk;
     use crate::bls::vanilla::BlsSigner;
@@ -85,8 +85,8 @@ mod tests {
             .map(|s| s.sign(message))
             .collect();
 
-        let threshold_vk = ThresholdVk::from_share(&agg_transcript.shares);
-        let sig_aggregator = params.aggregator(agg_transcript.shares);
+        let threshold_vk = ThresholdVk::from_share(&agg_transcript.payload);
+        let sig_aggregator = params.aggregator(agg_transcript.payload);
 
         let mut sig_agg_session_n = sig_aggregator.start_session(message.into_affine());
         sig_agg_session_n.append_verify_sigs(sigs.clone());

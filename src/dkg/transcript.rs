@@ -1,15 +1,15 @@
-use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
+use ark_ec::CurveGroup;
 use ark_std::vec::Vec;
 
-use crate::dkg::SharesAndMore;
+use crate::dkg::DkgResult;
 use crate::koe;
 
 /// Standalone or aggregated transcript with the witness.
 // TODO: add weights?
 #[derive(Clone)]
-pub struct Transcript<C: Pairing> {
-    pub shares: SharesAndMore<C>,
+pub struct DkgTranscript<C: Pairing> {
+    pub payload: DkgResult<C>,
 
     // witness data
     /// Commitment to the secret polynomial `A_j = f(w^j).g1, j = 0,...,n-1`
@@ -30,7 +30,7 @@ pub(crate) struct KoeProof<C: Pairing> {
     pub(crate) koe_proof: koe::Proof<C::G1>,
 }
 
-impl<C: Pairing> Transcript<C> {
+impl<C: Pairing> DkgTranscript<C> {
     pub fn merge_with(self, others: &[Self]) -> Self {
         let mut others = others.to_vec();
         others.push(self);
@@ -45,17 +45,17 @@ impl<C: Pairing> Transcript<C> {
                 .sum::<C::G1>().into_affine()
         }).collect();
 
-        let shares = transcripts.iter()
-            .map(|t| t.shares.clone())
+        let payload = transcripts.iter()
+            .map(|t| t.payload.clone())
             .collect::<Vec<_>>();
-        let shares = SharesAndMore::merge(&shares);
+        let payload = DkgResult::merge(&shares);
 
         let koe_proofs = transcripts.iter()
             .flat_map(|t| t.koe_proofs.clone())
             .collect::<Vec<_>>();
 
         Self {
-            shares,
+            payload,
             a,
             koe_proofs,
         }
