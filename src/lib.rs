@@ -1,4 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+
+use crate::dkg::DkgTranscript;
+
 /// Threshold Verifiable Unpredictable Function (VUF) scheme.
 /// Produces an unpredictable output by aggregating a threshold number of vanilla BLS signatures on the input.
 ///
@@ -24,6 +27,8 @@ pub mod koe;
 pub mod agg;
 pub mod bls;
 pub mod straus;
+
+pub type BlsTranscript = DkgTranscript<ark_bls12_381::Bls12_381>;
 
 // must have
 // TODO: Fiat-Shamir
