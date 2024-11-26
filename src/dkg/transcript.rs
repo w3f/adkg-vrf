@@ -48,7 +48,7 @@ impl<C: Pairing> DkgTranscript<C> {
         let payload = transcripts.iter()
             .map(|t| t.payload.clone())
             .collect::<Vec<_>>();
-        let payload = DkgResult::merge(&shares);
+        let payload = DkgResult::merge(&payload);
 
         let koe_proofs = transcripts.iter()
             .flat_map(|t| t.koe_proofs.clone())
