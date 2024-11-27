@@ -35,6 +35,7 @@ pub use transcript::*;
 
 //TODO: move bls_pks out?
 /// Parameters of an aPVSS instantiation.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ceremony<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> {
     /// The number of signers.
     pub n: usize,

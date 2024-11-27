@@ -1,7 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use crate::dkg::verifier::TranscriptVerifier;
-use crate::dkg::DkgTranscript;
+use crate::dkg::{Ceremony, DkgTranscript};
+use ark_poly::Radix2EvaluationDomain;
 
 /// Threshold Verifiable Unpredictable Function (VUF) scheme.
 /// Produces an unpredictable output by aggregating a threshold number of vanilla BLS signatures on the input.
@@ -29,6 +30,8 @@ pub mod agg;
 pub mod bls;
 pub mod straus;
 
+pub type BlsBlsPublicKey = ark_bls12_381::G2Affine;
+pub type BlsCeremony<'a> = Ceremony<'a, ark_bls12_381::Bls12_381, Radix2EvaluationDomain<ark_bls12_381::Fr>>;
 pub type BlsTranscript = DkgTranscript<ark_bls12_381::Bls12_381>;
 pub type BlsTranscriptVerifier = TranscriptVerifier<ark_bls12_381::Bls12_381>;
 

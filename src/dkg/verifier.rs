@@ -20,7 +20,6 @@ pub struct TranscriptVerifier<C: Pairing> {
 }
 
 impl<C: Pairing> TranscriptVerifier<C> {
-
     pub fn new(n: usize, t: usize) -> Self {
         let fft_domain = GeneralEvaluationDomain::new(n).unwrap();
         Self::new_with_domain(fft_domain, n, t)
@@ -41,6 +40,16 @@ impl<C: Pairing> TranscriptVerifier<C> {
             domain_size_n,
             domain_size_t,
         }
+    }
+
+    //TODO: domain separartion
+    pub fn verify_with_fs<D: EvaluationDomain<C::ScalarField>>(&self, params: &Ceremony<C, D>, t: &DkgTranscript<C>) {
+        let mut fs = ark_transcript::Transcript::new_labeled(b"whatever");
+        // TODO: hash the pks?
+        // fs.append(params);
+        fs.append(t);
+        let rng = &mut fs.challenge(b"whatever"); // TODO: Is it a secure rng at all?
+        self.verify(params, t, rng);
     }
 
     // TODO: check params
