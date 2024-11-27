@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use crate::dkg::verifier::TranscriptVerifier;
 use crate::dkg::DkgTranscript;
 
 /// Threshold Verifiable Unpredictable Function (VUF) scheme.
@@ -29,12 +30,13 @@ pub mod bls;
 pub mod straus;
 
 pub type BlsTranscript = DkgTranscript<ark_bls12_381::Bls12_381>;
+pub type BlsTranscriptVerifier = TranscriptVerifier<ark_bls12_381::Bls12_381>;
 
 // must have
 // TODO: Fiat-Shamir
 // TODO: cofactors/subgroup checks
-// TODO: no-std
 // TODO: return results
+// TODO: ark-substrate
 
 // nice to have
 // TODO: CP proofs

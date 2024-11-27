@@ -4,7 +4,6 @@ use ark_ff::Zero;
 use ark_poly::EvaluationDomain;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
-use ark_std::{end_timer, start_timer};
 use hashbrown::HashMap;
 
 use crate::bls::threshold::AggThresholdSig;
@@ -96,14 +95,7 @@ impl<'a, C: Pairing, D: EvaluationDomain<C::ScalarField>> Ceremony<'a, C, D> {
     }
 
     pub fn verifier(&self) -> TranscriptVerifier<C> {
-        let _t = start_timer!(|| "Interpolation");
-        let domain_size_n = BarycentricDomain::of_size(self.domain, self.n);
-        let domain_size_t = BarycentricDomain::of_size(self.domain, self.t);
-        end_timer!(_t);
-        TranscriptVerifier {
-            domain_size_n,
-            domain_size_t,
-        }
+        TranscriptVerifier::new_with_domain(self.domain, self.n, self.t)
     }
 
     // TODO: args are not any more aggregatable

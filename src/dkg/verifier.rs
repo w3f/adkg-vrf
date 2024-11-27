@@ -1,7 +1,7 @@
 use ark_ec::pairing::Pairing;
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, One, Zero};
-use ark_poly::EvaluationDomain;
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::{vec, vec::Vec};
@@ -14,15 +14,35 @@ use crate::utils::BarycentricDomain;
 /// Precomputed barycentric weights to facilitate interpolation.
 /// Depend only on `(t,n)` so can be reused between the ceremonies.
 /// `Ceremony::verifier()` creates the object.
-/// TODO: 1. can be computed faster
-/// TODO: 2. can keep lis_at_0
-/// TODO: 3. lis_at_0 can be computed faster
 pub struct TranscriptVerifier<C: Pairing> {
-    pub(crate) domain_size_n: BarycentricDomain<C::ScalarField>,
-    pub(crate) domain_size_t: BarycentricDomain<C::ScalarField>,
+    domain_size_n: BarycentricDomain<C::ScalarField>,
+    domain_size_t: BarycentricDomain<C::ScalarField>,
 }
 
 impl<C: Pairing> TranscriptVerifier<C> {
+
+    pub fn new(n: usize, t: usize) -> Self {
+        let fft_domain = GeneralEvaluationDomain::new(n).unwrap();
+        Self::new_with_domain(fft_domain, n, t)
+    }
+
+    /// TODO: 1. can be computed faster
+    /// TODO: 2. can keep lis_at_0
+    /// TODO: 3. lis_at_0 can be computed faster
+    pub fn new_with_domain<D: EvaluationDomain<C::ScalarField>>(fft_domain: D, n: usize, t: usize) -> Self {
+        assert!(fft_domain.size() >= n);
+        assert!(n >= t);
+        assert!(t > 0);
+        let _t = start_timer!(|| "Interpolation");
+        let domain_size_n = BarycentricDomain::of_size(fft_domain, n);
+        let domain_size_t = BarycentricDomain::of_size(fft_domain, t);
+        end_timer!(_t);
+        Self {
+            domain_size_n,
+            domain_size_t,
+        }
+    }
+
     // TODO: check params
     pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &DkgTranscript<C>, rng: &mut R) {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
