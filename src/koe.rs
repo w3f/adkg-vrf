@@ -49,17 +49,19 @@ impl<G: CurveGroup> Statement<G> {
 }
 
 impl<G: CurveGroup> Instance<G> {
-    pub fn verify(&self, proof: &Proof<G>) {
+    #[must_use]
+    pub fn verify(&self, proof: &Proof<G>) -> bool {
         let c = c(self, &proof.r);
         let p: G = self.points.iter()
             .zip(powers(c).skip(1))
             .map(|(&r, ci)| r * ci)
             .sum();
-        assert_eq!(proof.r, self.base * proof.s + p)
+        proof.r == self.base * proof.s + p
     }
 
     // TODO: check https://eprint.iacr.org/2022/222.pdf
-    pub fn batch_verify<R: Rng>(claims: &[(Instance<G>, Proof<G>)], rng: &mut R) {
+    #[must_use]
+    pub fn batch_verify<R: Rng>(claims: &[(Instance<G>, Proof<G>)], rng: &mut R) -> bool {
         let l = G::ScalarField::rand(rng);
         let coeffs: Vec<_> = claims.iter()
             .flat_map(|(x, pi)| {
@@ -86,7 +88,7 @@ impl<G: CurveGroup> Instance<G> {
             })
             .collect();
         let bases = G::normalize_batch(&bases);
-        assert!(G::msm(&bases, &coeffs).unwrap().is_zero());
+        G::msm(&bases, &coeffs).unwrap().is_zero()
     }
 }
 
@@ -112,8 +114,8 @@ mod tests {
         let statement = Statement { instance, dlogs: exponents };
 
         let proof = statement.prove(rng);
-        statement.instance.verify(&proof);
+        assert!(statement.instance.verify(&proof));
 
-        Instance::batch_verify(&[(statement.instance, proof)], rng);
+        assert!(Instance::batch_verify(&[(statement.instance, proof)], rng));
     }
 }

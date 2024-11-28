@@ -7,7 +7,7 @@ use ark_std::{end_timer, start_timer, UniformRand};
 use ark_std::{vec, vec::Vec};
 
 use crate::dkg::transcript::DkgTranscript;
-use crate::dkg::Ceremony;
+use crate::dkg::{Ceremony, DkgResult};
 use crate::koe;
 use crate::utils::BarycentricDomain;
 
@@ -42,18 +42,25 @@ impl<C: Pairing> TranscriptVerifier<C> {
         }
     }
 
-    //TODO: domain separartion
-    pub fn verify_with_fs<D: EvaluationDomain<C::ScalarField>>(&self, params: &Ceremony<C, D>, t: &DkgTranscript<C>) {
-        let mut fs = ark_transcript::Transcript::new_labeled(b"whatever");
-        // TODO: hash the pks?
+    /// Uses Fiat-Shamir randomness to verify the DKG `transcript`, and returns the payload, if valid.
+    /// Is useful for on-chain verification of transcripts, when instead of aggregating transcripts,
+    /// valid payloads are aggregated.
+    pub fn verify_with_fs<D: EvaluationDomain<C::ScalarField>>(&self, params: &Ceremony<C, D>, transcript: DkgTranscript<C>) -> Result<DkgResult<C>, ()> {
+        let mut fs = ark_transcript::Transcript::new_labeled(b"adkg_vrf::dkg::verifier");
+        // TODO: hash the pks
         // fs.append(params);
-        fs.append(t);
-        let rng = &mut fs.challenge(b"whatever"); // TODO: Is it a secure rng at all?
-        self.verify(params, t, rng);
+        fs.append(&transcript);
+        let rng = &mut fs.challenge(b"rng");
+        if self.verify(params, &transcript, rng) {
+            Ok(transcript.payload)
+        } else {
+            Err(())
+        }
     }
 
     // TODO: check params
-    pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &DkgTranscript<C>, rng: &mut R) {
+    #[must_use]
+    pub fn verify<D: EvaluationDomain<C::ScalarField>, R: Rng>(&self, params: &Ceremony<C, D>, t: &DkgTranscript<C>, rng: &mut R) -> bool {
         // 1. Proofs of knowledge of the discrete logarithms: C_i = f_i(0).g1` and `h1_i = sh_i.g1`.
         let koes = t.koe_proofs.iter()
             .map(|w| {
@@ -64,24 +71,28 @@ impl<C: Pairing> TranscriptVerifier<C> {
                 (x, w.koe_proof.clone())
             })
             .collect::<Vec<_>>();
-        koe::Instance::batch_verify(&koes, rng);
+        if !koe::Instance::batch_verify(&koes, rng) {
+            return false;
+        }
+
+        let payload = &t.payload;
 
         let sum_c = t.koe_proofs.iter()
             .map(|w| w.c_i)
             .sum::<C::G1>()
             .into_affine();
-
         let sum_h1 = t.koe_proofs.iter()
             .map(|w| w.h1_i)
             .sum::<C::G1>()
             .into_affine();
 
-        let shares = &t.payload;
-        assert_eq!(shares.c, sum_c);
-        assert_eq!(shares.h1, sum_h1);
+        // `C` and `h1` in the payload are consistent with the `C_i`s and `h1_i`s "signed".
+        if sum_c != payload.c || sum_h1 != payload.h1 {
+            return false;
+        }
 
-        // Merges the equations from `Self::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
-        // TODO: Fiat-Shamir
+        // 2, 3, 4, 5
+        // Merges the equations from `Ceremony::verify_transcript_unoptimized` with random coefficients `r1, r2, r3`.
         let (r1, z) = (C::ScalarField::rand(rng), C::ScalarField::rand(rng));
         let r2 = r1.square();
         let r3 = r2 * r1;
@@ -107,14 +118,14 @@ impl<C: Pairing> TranscriptVerifier<C> {
 
         let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
         let a_term = C::G1::msm(&t.a, &a_coeffs).unwrap();
-        let bgpk_at_z = C::G2::msm(&shares.bgpk, &lis_size_n_at_z).unwrap();
+        let bgpk_at_z = C::G2::msm(&payload.bgpk, &lis_size_n_at_z).unwrap();
         let pk_at_z = C::G2::msm(&params.bls_pks, &lis_size_n_at_z).unwrap();
         end_timer!(_t);
 
-        assert!(C::multi_pairing(
-            &[a_term + shares.c * r2 + shares.h1 * r3, -params.g1, shares.h1.into()],
-            &[params.g2, bgpk_at_z + shares.h2 * r3, pk_at_z],
-        ).is_zero());
+        C::multi_pairing(
+            &[a_term + payload.c * r2 + payload.h1 * r3, -params.g1, payload.h1.into()],
+            &[params.g2, bgpk_at_z + payload.h2 * r3, pk_at_z],
+        ).is_zero()
     }
 }
 

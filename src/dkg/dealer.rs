@@ -88,7 +88,7 @@ mod tests {
         end_timer!(_t);
 
         let _t = start_timer!(|| format!("Standalone transcript validation"));
-        transcript_verifier.verify(&params, &transcript, rng);
+        assert!(transcript_verifier.verify(&params, &transcript, rng));
         end_timer!(_t);
 
         let transcripts = vec![transcript; k];
@@ -97,7 +97,7 @@ mod tests {
         end_timer!(_t);
 
         let _t = start_timer!(|| format!("Aggregate transcript validation, k = {}", k));
-        transcript_verifier.verify(&params, &agg_transcript, rng);
+        assert!(transcript_verifier.verify(&params, &agg_transcript, rng));
         end_timer!(_t);
     }
 

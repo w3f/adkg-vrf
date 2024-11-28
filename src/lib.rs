@@ -84,11 +84,11 @@ mod tests {
 
         let transcript = params.deal(rng);
         params.verify_transcript_unoptimized(&transcript, rng);
-        transcript_verifier.verify(&params, &transcript, rng);
+        assert!(transcript_verifier.verify(&params, &transcript, rng));
 
         let another_transcript = params.deal(rng);
         let agg_transcript = transcript.merge_with(&vec![another_transcript]);
-        transcript_verifier.verify(&params, &agg_transcript, rng);
+        assert!(transcript_verifier.verify(&params, &agg_transcript, rng));
 
         let message = C::G1::generator();
         let sigs: Vec<_> = signers.iter()
