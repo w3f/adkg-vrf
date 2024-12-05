@@ -22,6 +22,7 @@ name = "straus"
 harness = false
 
 [features]
+default = ["std"]
 print-trace = ["ark-std/print-trace"]
 std = [
     "ark-std/std",
